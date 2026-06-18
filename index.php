@@ -1570,7 +1570,7 @@ if (isset($_GET['action'])) {
                 <div class="section-header">
                     <div>
                         <h1 class="section-title">কোম্পানি নিয়মাবলী ও নির্দেশিকা</h1>
-                        <p class="section-subtitle">কোম্পানির সক্রিয় এবং যাচাইকৃত নীতিমালা</p>
+                        <p class="section-subtitle">Active and verified company policies</p>
                     </div>
                 </div>
 
@@ -1580,21 +1580,21 @@ if (isset($_GET['action'])) {
                         <div class="stat-icon"><i class="fa-solid fa-file-contract"></i></div>
                         <div class="stat-info">
                             <span class="stat-val" id="stat-active-rules">0</span>
-                            <span class="stat-lbl">সক্রিয় নীতিমালা</span>
+                            <span class="stat-lbl">Active Policies</span>
                         </div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-icon green"><i class="fa-solid fa-shield-check"></i></div>
                         <div class="stat-info">
                             <span class="stat-val" id="stat-integrity-status">Verified</span>
-                            <span class="stat-lbl">লেজারের অখণ্ডতা</span>
+                            <span class="stat-lbl">Ledger Integrity</span>
                         </div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-icon orange"><i class="fa-solid fa-clock-rotate-left"></i></div>
                         <div class="stat-info">
                             <span class="stat-val" id="stat-last-modified" style="font-size: 0.95rem; font-family: var(--font-mono);">-</span>
-                            <span class="stat-lbl">সর্বশেষ নিরীক্ষার তারিখ</span>
+                            <span class="stat-lbl">Last Audit Date</span>
                         </div>
                     </div>
                 </div>
@@ -1702,28 +1702,28 @@ if (isset($_GET['action'])) {
             <section id="view-timeline" class="view-section">
                 <div class="section-header">
                     <div>
-                        <h1 class="section-title">সংশোধনী খতিয়ান ও প্রমাণপত্র ট্রেইল</h1>
-                        <p class="section-subtitle">ক্রমানুসারী এবং ক্রিপ্টোগ্রাফিক্যালি স্বাক্ষরিত পলিসি সংশোধনের ট্রেইল</p>
+                        <h1 class="section-title">Audit Ledger & Chain of Custody</h1>
+                        <p class="section-subtitle">Chronological, cryptographically-signed policy revision trail</p>
                     </div>
                 </div>
 
                 <div class="timeline-filter-bar">
                     <div class="timeline-date-filters">
                         <div class="date-input-group">
-                            <label for="filter-start-date">শুরু</label>
+                            <label for="filter-start-date">Start</label>
                             <input class="date-input" type="date" id="filter-start-date" onchange="filterTimelineData()">
                         </div>
                         <div class="date-input-group">
-                            <label for="filter-end-date">শেষ</label>
+                            <label for="filter-end-date">End</label>
                             <input class="date-input" type="date" id="filter-end-date" onchange="filterTimelineData()">
                         </div>
                         <button class="btn btn-secondary" style="padding: 6px 12px; width: auto; font-size: 0.8125rem;" onclick="clearDateFilters()">
-                            ফিল্টার রিসেট
+                            Reset Filters
                         </button>
                     </div>
                     <!-- MODULE 4: Legal Export Button -->
                     <button class="btn btn-primary" style="width: auto; background: var(--color-success); box-shadow: 0 4px 14px rgba(21, 128, 61, 0.15);" onclick="generateLegalPDF()">
-                        <i class="fa-solid fa-file-pdf"></i> আদালত-উপযোগী লেজার ডাউনলোড
+                        <i class="fa-solid fa-file-pdf"></i> সংশোধনী খতিয়ান ডাউনলোড
                     </button>
                 </div>
 
