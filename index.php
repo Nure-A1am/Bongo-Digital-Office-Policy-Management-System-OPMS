@@ -22,6 +22,7 @@ if (getenv('OPMS_GITHUB_TOKEN') && getenv('OPMS_REPO_OWNER') && getenv('OPMS_REP
         'repo_owner' => getenv('OPMS_REPO_OWNER'),
         'repo_name' => getenv('OPMS_REPO_NAME'),
         'company_name' => getenv('OPMS_COMPANY_NAME') ?: 'Office Policy System',
+        'company_logo_url' => getenv('OPMS_COMPANY_LOGO_URL') ?: '',
         'branch' => getenv('OPMS_BRANCH') ?: 'main',
         'admin_passcode' => getenv('OPMS_ADMIN_PASSCODE') ?: 'admin'
     ];
@@ -47,6 +48,7 @@ if (isset($_GET['action'])) {
         $owner = $data['repo_owner'] ?? '';
         $repo = $data['repo_name'] ?? '';
         $company = $data['company_name'] ?? '';
+        $logo_url = $data['company_logo_url'] ?? '';
         $branch = $data['branch'] ?? 'main';
         $admin_passcode = $data['admin_passcode'] ?? 'admin';
 
@@ -122,6 +124,7 @@ if (isset($_GET['action'])) {
             'repo_owner' => $owner,
             'repo_name' => $repo,
             'company_name' => $company,
+            'company_logo_url' => $logo_url,
             'branch' => $branch,
             'admin_passcode' => $admin_passcode
         ];
@@ -135,6 +138,39 @@ if (isset($_GET['action'])) {
     // Ensure system is configured for subsequent operations
     if (!$is_configured) {
         send_json(['error' => 'System has not been configured.'], 403);
+    }
+
+    // Update Company Profile API
+    if ($action === 'update_company_profile') {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            send_json(['error' => 'Method not allowed'], 405);
+        }
+        if (getenv('OPMS_GITHUB_TOKEN')) {
+            send_json(['error' => 'Company profile is managed via server environment variables.'], 400);
+        }
+        $data = json_decode(file_get_contents('php://input'), true);
+        $company_name = $data['company_name'] ?? '';
+        $company_logo_url = $data['company_logo_url'] ?? '';
+
+        if (!$company_name) {
+            send_json(['error' => 'Company Name is required.'], 400);
+        }
+
+        // Load existing config
+        if (file_exists(CONFIG_FILE)) {
+            $config_data = json_decode(file_get_contents(CONFIG_FILE), true);
+        } else {
+            $config_data = [];
+        }
+
+        $config_data['company_name'] = $company_name;
+        $config_data['company_logo_url'] = $company_logo_url;
+
+        if (file_put_contents(CONFIG_FILE, json_encode($config_data, JSON_PRETTY_PRINT))) {
+            send_json(['success' => true]);
+        } else {
+            send_json(['error' => 'Failed to save updated company profile.'], 500);
+        }
     }
 
     // Verify Admin Passcode API
@@ -377,6 +413,7 @@ if (isset($_GET['action'])) {
         window.APP_CONFIG = {
             isConfigured: <?php echo $is_configured ? 'true' : 'false'; ?>,
             companyName: <?php echo json_encode($config['company_name'] ?? ''); ?>,
+            companyLogoUrl: <?php echo json_encode($config['company_logo_url'] ?? ''); ?>,
             repoOwner: <?php echo json_encode($config['repo_owner'] ?? ''); ?>,
             repoName: <?php echo json_encode($config['repo_name'] ?? ''); ?>,
             branch: <?php echo json_encode($config['branch'] ?? 'main'); ?>
@@ -401,7 +438,7 @@ if (isset($_GET['action'])) {
             --bg-body: #f1f5f9;
             --bg-surface: #ffffff;
             --bg-surface-solid: #ffffff;
-            --bg-sidebar: #0f172a; /* Slate-900 sidebar for sharp navigation contrast */
+            --bg-sidebar: #fcfaf7; /* Ivory/Cream Paper Sidebar */
             --border-glow: rgba(59, 130, 246, 0.15);
             --border-standard: #e2e8f0;
             --color-primary: #1e3a8a; /* Deep Royal Navy */
@@ -632,61 +669,100 @@ if (isset($_GET['action'])) {
             z-index: 100;
             display: flex;
             flex-direction: column;
+            border-right: 4px double #bcaaa4; /* Formal double border */
         }
 
         .sidebar-brand {
-            padding: 24px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 30px 20px;
+            border-bottom: 1px solid #e2dad0;
             display: flex;
+            flex-direction: column;
             align-items: center;
-            gap: 10px;
+            text-align: center;
+            gap: 14px;
         }
 
-        .sidebar-logo {
-            font-size: 1.35rem;
-            color: #ffffff;
+        .sidebar-logo-container {
+            width: 70px;
+            height: 70px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            overflow: hidden;
+            border: 2px solid #bcaaa4;
+            background: #ffffff;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.06);
+        }
+
+        .sidebar-logo-img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        /* Default Seal Emblem */
+        .sidebar-default-seal {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            background: radial-gradient(circle, #a83220 30%, #801a1a 100%);
+            border: 3px double #e6c280;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #e6c280;
+            font-size: 1.6rem;
+            box-shadow: 0 4px 8px rgba(128,26,26,0.3), inset 0 2px 4px rgba(255,255,255,0.2);
+            position: relative;
         }
 
         .sidebar-title {
             font-family: var(--font-paper);
-            font-size: 1.05rem;
-            font-weight: 600;
-            color: #ffffff;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #2d1e18;
+            line-height: 1.3;
+            text-shadow: 0 1px 0 rgba(255,255,255,0.5);
+            margin: 0;
+            word-break: break-word;
+            white-space: normal;
         }
 
         .sidebar-menu {
             list-style: none;
-            padding: 20px 12px;
+            padding: 24px 0;
             display: flex;
             flex-direction: column;
-            gap: 6px;
+            gap: 4px;
             flex-grow: 1;
         }
 
         .menu-link {
             display: flex;
             align-items: center;
-            gap: 12px;
-            padding: 10px 14px;
-            color: #94a3b8;
+            gap: 14px;
+            padding: 12px 24px;
+            color: #5c4d43;
             text-decoration: none;
-            border-radius: 6px;
-            font-weight: 500;
-            font-size: 0.9rem;
+            font-family: var(--font-paper);
+            font-weight: 600;
+            font-size: 0.95rem;
             transition: all var(--transition-speed);
+            border-left: 4px solid transparent;
         }
 
         .menu-link:hover {
-            color: #ffffff;
-            background: rgba(255, 255, 255, 0.04);
+            color: #2d1e18;
+            background: #eae5dc;
+            border-left: 4px solid #bcaaa4;
         }
 
         .menu-link.active {
-            color: #ffffff;
-            background: rgba(255, 255, 255, 0.08);
+            color: #1e140f;
+            background: #e2dad0;
+            border-left: 4px solid #801a1a;
+            font-weight: 700;
         }
 
         /* Main Content container */
@@ -1262,6 +1338,14 @@ if (isset($_GET['action'])) {
                 </div>
 
                 <div class="form-group">
+                    <label class="form-label" for="setup-logo">Company Logo URL (Optional)</label>
+                    <div class="form-control-wrapper">
+                        <input class="form-control" type="url" id="setup-logo" placeholder="e.g. https://example.com/logo.png">
+                        <i class="fa-solid fa-image form-icon"></i>
+                    </div>
+                </div>
+
+                <div class="form-group">
                     <label class="form-label" for="setup-token">GitHub Personal Access Token</label>
                     <div class="form-control-wrapper">
                         <input class="form-control" type="password" id="setup-token" required placeholder="ghp_xxxxxxxxxxxx">
@@ -1318,12 +1402,19 @@ if (isset($_GET['action'])) {
         <!-- Sidebar Navigation -->
         <aside class="sidebar">
             <div class="sidebar-brand">
-                <div style="display: flex; align-items: center; gap: 10px; overflow: hidden;">
-                    <i class="fa-solid fa-shield-halved sidebar-logo"></i>
-                    <span class="sidebar-title" title="<?php echo htmlspecialchars($config['company_name']); ?>">
-                        <?php echo htmlspecialchars($config['company_name']); ?>
-                    </span>
-                </div>
+                <?php if (!empty($config['company_logo_url'])): ?>
+                    <div class="sidebar-logo-container">
+                        <img src="<?php echo htmlspecialchars($config['company_logo_url']); ?>" class="sidebar-logo-img" alt="Logo">
+                    </div>
+                <?php else: ?>
+                    <div class="sidebar-default-seal" title="অফিসিয়াল কোম্পানি সিল">
+                        <i class="fa-solid fa-scale-balanced"></i>
+                    </div>
+                <?php endif; ?>
+                
+                <h2 class="sidebar-title">
+                    <?php echo htmlspecialchars($config['company_name']); ?>
+                </h2>
             </div>
             
             <ul class="sidebar-menu">
@@ -1438,8 +1529,29 @@ if (isset($_GET['action'])) {
                     </table>
                 </div>
 
-                <!-- Admin-Only Connection Settings -->
-                <div style="margin-top: 45px; max-width: 420px;">
+                <!-- Admin-Only Connection & Profile Settings -->
+                <div style="margin-top: 45px; display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; max-width: 900px;">
+                    <!-- Company Profile Settings -->
+                    <div class="git-status-card">
+                        <div class="git-status-title">
+                            <i class="fa-solid fa-id-card"></i> Company Profile Settings
+                        </div>
+                        <form id="admin-profile-form" onsubmit="handleUpdateProfile(event)" style="margin-top: 15px; display: flex; flex-direction: column; gap: 12px;">
+                            <div>
+                                <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">Company Name</label>
+                                <input type="text" id="admin-company-name" class="form-control" style="padding: 8px 12px; font-size: 0.85rem;" value="<?php echo htmlspecialchars($config['company_name'] ?? ''); ?>" required>
+                            </div>
+                            <div>
+                                <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px;">Company Logo URL (Optional)</label>
+                                <input type="url" id="admin-company-logo" class="form-control" style="padding: 8px 12px; font-size: 0.85rem;" value="<?php echo htmlspecialchars($config['company_logo_url'] ?? ''); ?>" placeholder="e.g. https://example.com/logo.png">
+                            </div>
+                            <button type="submit" class="btn btn-primary" style="padding: 8px 14px; font-size: 0.85rem; width: auto; align-self: flex-start; margin-top: 5px;">
+                                <i class="fa-solid fa-floppy-disk"></i> Save Profile
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- Active GitOps Connection -->
                     <div class="git-status-card">
                         <div class="git-status-title">
                             <span class="git-status-dot"></span> Active GitOps Connection
@@ -1790,6 +1902,7 @@ if (isset($_GET['action'])) {
             event.preventDefault();
             
             const company = document.getElementById('setup-company').value.trim();
+            const logo = document.getElementById('setup-logo').value.trim();
             const token = document.getElementById('setup-token').value.trim();
             const owner = document.getElementById('setup-owner').value.trim();
             const repo = document.getElementById('setup-repo').value.trim();
@@ -1807,6 +1920,7 @@ if (isset($_GET['action'])) {
                         repo_owner: owner,
                         repo_name: repo,
                         company_name: company,
+                        company_logo_url: logo,
                         branch: branch,
                         admin_passcode: passcode
                     })
@@ -1817,6 +1931,32 @@ if (isset($_GET['action'])) {
                     setTimeout(() => {
                         window.location.reload();
                     }, 1500);
+                }
+            } catch (err) {
+                toggleLoading(false);
+            }
+        }
+
+        async function handleUpdateProfile(event) {
+            event.preventDefault();
+            const name = document.getElementById('admin-company-name').value.trim();
+            const logo = document.getElementById('admin-company-logo').value.trim();
+
+            toggleLoading(true, "Saving Company Profile...");
+            try {
+                const result = await fetchAPI('?action=update_company_profile', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        company_name: name,
+                        company_logo_url: logo
+                    })
+                });
+                if (result.success) {
+                    showToast("Company Profile updated successfully!", "success");
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1200);
                 }
             } catch (err) {
                 toggleLoading(false);
