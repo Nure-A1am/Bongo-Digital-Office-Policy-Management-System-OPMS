@@ -2262,8 +2262,13 @@ if (isset($_GET['action'])) {
             const startLimit = startDateVal ? new Date(startDateVal + 'T00:00:00') : null;
             const endLimit = endDateVal ? new Date(endDateVal + 'T23:59:59') : null;
 
-            // Filter commits based on date inputs
+            // Filter commits based on date inputs and ensure they are actual policy updates
             const filteredCommits = commitsCache.filter(commitObj => {
+                const msg = commitObj.commit.message;
+                // Only allow commits that represent policy updates (additions, edits, deletions)
+                if (!msg.startsWith("HR Policy Update:") || (!msg.includes("Added '") && !msg.includes("Edited '") && !msg.includes("Removed '"))) {
+                    return false;
+                }
                 const date = new Date(commitObj.commit.author.date);
                 if (startLimit && date < startLimit) return false;
                 if (endLimit && date > endLimit) return false;
@@ -2317,6 +2322,26 @@ if (isset($_GET['action'])) {
                 const hash = commitObj.sha;
                 const shortHash = hash.substring(0, 7);
 
+                // Format the commit message formally in Bengali
+                let formattedMsg = msg;
+                let match;
+                if ((match = msg.match(/Added\s+'([^']+)'\s+policy/i))) {
+                    formattedMsg = `<div style="display: flex; flex-direction: column; gap: 4px;">
+                        <span style="background: #e2fbf0; color: #0f5132; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 0.75rem; border: 1px solid #a3cfbb; width: fit-content; display: inline-block;">নতুন নীতি সংযোজন</span>
+                        <span style="font-weight: 600; font-family: var(--font-paper); font-size: 0.95rem;">'${escapeHtml(match[1])}' নীতিমালা যুক্ত করা হয়েছে।</span>
+                    </div>`;
+                } else if ((match = msg.match(/Edited\s+'([^']+)'\s+policy/i))) {
+                    formattedMsg = `<div style="display: flex; flex-direction: column; gap: 4px;">
+                        <span style="background: #fff8e6; color: #664d03; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 0.75rem; border: 1px solid #ffecb5; width: fit-content; display: inline-block;">নীতিমালা সংশোধন</span>
+                        <span style="font-weight: 600; font-family: var(--font-paper); font-size: 0.95rem;">'${escapeHtml(match[1])}' নীতিমালা সংশোধন/আপডেট করা হয়েছে।</span>
+                    </div>`;
+                } else if ((match = msg.match(/Removed\s+'([^']+)'\s+policy/i))) {
+                    formattedMsg = `<div style="display: flex; flex-direction: column; gap: 4px;">
+                        <span style="background: #fdf2f2; color: #842029; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 0.75rem; border: 1px solid #f8b4b4; width: fit-content; display: inline-block;">নীতিমালা প্রত্যাহার</span>
+                        <span style="font-weight: 600; font-family: var(--font-paper); font-size: 0.95rem; color: #842029;">'${escapeHtml(match[1])}' নীতিমালা চিরতরে প্রত্যাহার/বাতিল করা হয়েছে।</span>
+                    </div>`;
+                }
+
                 html += `
                     <tr style="border-bottom: 1px solid #e2e8f0; transition: background 0.1s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
                         <td style="padding: 14px 12px; font-family: var(--font-mono); font-size: 0.78rem; font-weight: 600; color: #1e3a8a;">
@@ -2330,7 +2355,7 @@ if (isset($_GET['action'])) {
                             <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: 400; font-family: var(--font-sans);">${escapeHtml(authorEmail)}</div>
                         </td>
                         <td style="padding: 14px 12px; color: #334155; text-align: justify;">
-                            <div style="font-weight: 600; color: #0f172a; font-size: 0.95rem;">${escapeHtml(msg)}</div>
+                            <div>${formattedMsg}</div>
                         </td>
                         <td style="padding: 14px 12px; text-align: right; font-family: var(--font-mono); font-size: 0.75rem;">
                             <div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px;">
@@ -2392,6 +2417,11 @@ if (isset($_GET['action'])) {
             const endLimit = endDateVal ? new Date(endDateVal + 'T23:59:59') : null;
 
             const filteredCommits = commitsCache.filter(commitObj => {
+                const msg = commitObj.commit.message;
+                // Only allow commits that represent policy updates (additions, edits, deletions)
+                if (!msg.startsWith("HR Policy Update:") || (!msg.includes("Added '") && !msg.includes("Edited '") && !msg.includes("Removed '"))) {
+                    return false;
+                }
                 const date = new Date(commitObj.commit.author.date);
                 if (startLimit && date < startLimit) return false;
                 if (endLimit && date > endLimit) return false;
@@ -2466,9 +2496,18 @@ if (isset($_GET['action'])) {
                 const hash = commitObj.sha;
 
                 let actionLabel = 'Revision';
-                if (msg.includes('Added')) actionLabel = 'Enacted (ADD)';
-                else if (msg.includes('Removed')) actionLabel = 'Terminated (DELETE)';
-                else if (msg.includes('Edited')) actionLabel = 'Revised (EDIT)';
+                let actionDesc = msg;
+                let match;
+                if ((match = msg.match(/Added\s+'([^']+)'\s+policy/i))) {
+                    actionLabel = 'Enacted (ADD)';
+                    actionDesc = `নতুন নীতি সংযোজন: '${match[1]}' নীতিমালা যুক্ত করা হয়েছে।`;
+                } else if ((match = msg.match(/Removed\s+'([^']+)'\s+policy/i))) {
+                    actionLabel = 'Terminated (DELETE)';
+                    actionDesc = `নীতিমালা প্রত্যাহার: '${match[1]}' নীতিমালা চিরতরে প্রত্যাহার/বাতিল করা হয়েছে।`;
+                } else if ((match = msg.match(/Edited\s+'([^']+)'\s+policy/i))) {
+                    actionLabel = 'Revised (EDIT)';
+                    actionDesc = `নীতিমালা সংশোধন: '${match[1]}' নীতিমালা সংশোধন/আপডেট করা হয়েছে।`;
+                }
 
                 htmlContent += `
                     <tr>
@@ -2476,7 +2515,7 @@ if (isset($_GET['action'])) {
                         <td>${escapeHtml(author)}</td>
                         <td><span class="pdf-action-label">${actionLabel}</span></td>
                         <td>
-                            <div style="font-weight: bold; margin-bottom: 6px;">${escapeHtml(msg)}</div>
+                            <div style="font-weight: bold; margin-bottom: 6px; font-family: 'Noto Serif Bengali', serif;">${escapeHtml(actionDesc)}</div>
                             <div style="font-size: 9px; color: #555;">SHA-1 SIGNATURE:</div>
                             <div class="pdf-hash-text">${hash}</div>
                         </td>
