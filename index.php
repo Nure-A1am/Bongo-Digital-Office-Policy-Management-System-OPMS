@@ -359,7 +359,7 @@ if (isset($_GET['action'])) {
         // Commit updated rules.json to GitHub repository
         $commit_payload = [
             'message' => $commit_msg,
-            'content' => base64_encode(json_encode($db, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)),
+            'content' => base64_encode(json_encode($db, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)),
             'branch' => $branch
         ];
         if ($sha) {
@@ -444,7 +444,7 @@ if (isset($_GET['action'])) {
         $commit_msg = "HR Policy Update: Removed '{$deleted_title}' policy";
         $commit_payload = [
             'message' => $commit_msg,
-            'content' => base64_encode(json_encode($db, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)),
+            'content' => base64_encode(json_encode($db, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)),
             'sha' => $sha,
             'branch' => $branch
         ];
@@ -548,7 +548,7 @@ if (isset($_GET['action'])) {
         // Commit updated rules.json to GitHub repository
         $commit_payload = [
             'message' => $commit_msg,
-            'content' => base64_encode(json_encode($db, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)),
+            'content' => base64_encode(json_encode($db, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)),
             'branch' => $branch
         ];
         if ($sha) {
@@ -640,7 +640,7 @@ if (isset($_GET['action'])) {
         $commit_msg = "HR Policy Update: Deleted category '{$deleted_name}'";
         $commit_payload = [
             'message' => $commit_msg,
-            'content' => base64_encode(json_encode($db, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)),
+            'content' => base64_encode(json_encode($db, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)),
             'sha' => $sha,
             'branch' => $branch
         ];
