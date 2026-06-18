@@ -225,15 +225,46 @@ if (isset($_GET['action'])) {
         ];
     }
 
-    // Get active rules
+    // Get active rules and categories
     if ($action === 'get_rules') {
         $result = call_github_api('GET', "/contents/rules.json?ref={$branch}");
         if ($result['status'] === 404) {
-            send_json(['rules' => [], 'sha' => null]);
+            send_json(['categories' => [], 'rules' => [], 'sha' => null]);
         } elseif ($result['status'] === 200) {
             $raw_content = base64_decode($result['body']['content']);
-            $rules_array = json_decode($raw_content, true) ?: [];
-            send_json(['rules' => $rules_array, 'sha' => $result['body']['sha']]);
+            $data = json_decode($raw_content, true) ?: [];
+            
+            // Check if it's flat array (legacy) and convert if necessary
+            if (is_array($data) && !isset($data['policies'])) {
+                $categories = [];
+                $policies = [];
+                $cat_map = [];
+                foreach ($data as $old_rule) {
+                    $cat_name = $old_rule['category'] ?? 'General';
+                    if (!isset($cat_map[$cat_name])) {
+                        $cat_id = 'cat_' . uniqid();
+                        $cat_map[$cat_name] = $cat_id;
+                        $categories[] = [
+                            'id' => $cat_id,
+                            'name' => $cat_name,
+                            'parent_id' => null
+                        ];
+                    }
+                    $old_rule['category_id'] = $cat_map[$cat_name];
+                    unset($old_rule['category']);
+                    $policies[] = $old_rule;
+                }
+                $data = [
+                    'categories' => $categories,
+                    'policies' => $policies
+                ];
+            }
+            
+            send_json([
+                'categories' => $data['categories'] ?? [],
+                'rules' => $data['policies'] ?? [],
+                'sha' => $result['body']['sha']
+            ]);
         } else {
             send_json(['error' => 'Unable to read policy rules from GitHub repository.', 'details' => $result['body']], $result['status']);
         }
@@ -248,20 +279,48 @@ if (isset($_GET['action'])) {
         $rule_id = $data['id'] ?? null;
         $title = $data['title'] ?? '';
         $description = $data['description'] ?? '';
-        $category = $data['category'] ?? 'General';
+        $category_id = $data['category_id'] ?? '';
 
-        if (!$title || !$description) {
-            send_json(['error' => 'Title and Description are mandatory fields.'], 400);
+        if (!$title || !$description || !$category_id) {
+            send_json(['error' => 'Title, Description and Category are mandatory fields.'], 400);
         }
 
         // Fetch current rules.json state from GitHub
         $result = call_github_api('GET', "/contents/rules.json?ref={$branch}");
-        $rules = [];
+        $db = ['categories' => [], 'policies' => []];
         $sha = null;
 
         if ($result['status'] === 200) {
             $raw_content = base64_decode($result['body']['content']);
-            $rules = json_decode($raw_content, true) ?: [];
+            $db_raw = json_decode($raw_content, true) ?: [];
+            
+            // Check if legacy flat array
+            if (is_array($db_raw) && !isset($db_raw['policies'])) {
+                $categories = [];
+                $policies = [];
+                $cat_map = [];
+                foreach ($db_raw as $old_rule) {
+                    $cat_name = $old_rule['category'] ?? 'General';
+                    if (!isset($cat_map[$cat_name])) {
+                        $cat_id = 'cat_' . uniqid();
+                        $cat_map[$cat_name] = $cat_id;
+                        $categories[] = [
+                            'id' => $cat_id,
+                            'name' => $cat_name,
+                            'parent_id' => null
+                        ];
+                    }
+                    $old_rule['category_id'] = $cat_map[$cat_name];
+                    unset($old_rule['category']);
+                    $policies[] = $old_rule;
+                }
+                $db = [
+                    'categories' => $categories,
+                    'policies' => $policies
+                ];
+            } else {
+                $db = $db_raw;
+            }
             $sha = $result['body']['sha'];
         } elseif ($result['status'] !== 404) {
             send_json(['error' => 'Unable to fetch current repository policies.', 'details' => $result['body']], $result['status']);
@@ -270,11 +329,11 @@ if (isset($_GET['action'])) {
         $is_updating = false;
         if ($rule_id) {
             // Edit Rule
-            foreach ($rules as &$rule) {
+            foreach ($db['policies'] as &$rule) {
                 if ($rule['id'] === $rule_id) {
                     $rule['title'] = $title;
                     $rule['description'] = $description;
-                    $rule['category'] = $category;
+                    $rule['category_id'] = $category_id;
                     $rule['updated_at'] = date('c');
                     $is_updating = true;
                     break;
@@ -289,18 +348,18 @@ if (isset($_GET['action'])) {
                 'id' => 'rule_' . uniqid(),
                 'title' => $title,
                 'description' => $description,
-                'category' => $category,
+                'category_id' => $category_id,
                 'created_at' => date('c'),
                 'updated_at' => date('c')
             ];
-            $rules[] = $new_rule;
+            $db['policies'][] = $new_rule;
             $commit_msg = "HR Policy Update: Added '{$title}' policy";
         }
 
         // Commit updated rules.json to GitHub repository
         $commit_payload = [
             'message' => $commit_msg,
-            'content' => base64_encode(json_encode($rules, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)),
+            'content' => base64_encode(json_encode($db, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)),
             'branch' => $branch
         ];
         if ($sha) {
@@ -309,7 +368,7 @@ if (isset($_GET['action'])) {
 
         $push_res = call_github_api('PUT', "/contents/rules.json", $commit_payload);
         if ($push_res['status'] === 200 || $push_res['status'] === 201) {
-            send_json(['success' => true, 'rules' => $rules]);
+            send_json(['success' => true, 'rules' => $db['policies'], 'categories' => $db['categories']]);
         } else {
             send_json(['error' => 'Failed to commit policies update to GitHub.', 'details' => $push_res['body']], $push_res['status']);
         }
@@ -334,19 +393,45 @@ if (isset($_GET['action'])) {
         }
 
         $raw_content = base64_decode($result['body']['content']);
-        $rules = json_decode($raw_content, true) ?: [];
+        $db = json_decode($raw_content, true) ?: [];
         $sha = $result['body']['sha'];
 
-        $filtered_rules = [];
+        // Normalize if legacy flat array
+        if (is_array($db) && !isset($db['policies'])) {
+            $categories = [];
+            $policies = [];
+            $cat_map = [];
+            foreach ($db as $old_rule) {
+                $cat_name = $old_rule['category'] ?? 'General';
+                if (!isset($cat_map[$cat_name])) {
+                    $cat_id = 'cat_' . uniqid();
+                    $cat_map[$cat_name] = $cat_id;
+                    $categories[] = [
+                        'id' => $cat_id,
+                        'name' => $cat_name,
+                        'parent_id' => null
+                    ];
+                }
+                $old_rule['category_id'] = $cat_map[$cat_name];
+                unset($old_rule['category']);
+                $policies[] = $old_rule;
+            }
+            $db = [
+                'categories' => $categories,
+                'policies' => $policies
+            ];
+        }
+
+        $filtered_policies = [];
         $deleted_title = 'Unknown';
         $item_found = false;
 
-        foreach ($rules as $rule) {
+        foreach ($db['policies'] as $rule) {
             if ($rule['id'] === $rule_id) {
                 $deleted_title = $rule['title'];
                 $item_found = true;
             } else {
-                $filtered_rules[] = $rule;
+                $filtered_policies[] = $rule;
             }
         }
 
@@ -354,19 +439,217 @@ if (isset($_GET['action'])) {
             send_json(['error' => 'Policy rule with provided ID not found.'], 404);
         }
 
+        $db['policies'] = $filtered_policies;
+
         $commit_msg = "HR Policy Update: Removed '{$deleted_title}' policy";
         $commit_payload = [
             'message' => $commit_msg,
-            'content' => base64_encode(json_encode($filtered_rules, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)),
+            'content' => base64_encode(json_encode($db, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)),
             'sha' => $sha,
             'branch' => $branch
         ];
 
         $push_res = call_github_api('PUT', "/contents/rules.json", $commit_payload);
         if ($push_res['status'] === 200 || $push_res['status'] === 201) {
-            send_json(['success' => true, 'rules' => $filtered_rules]);
+            send_json(['success' => true, 'rules' => $filtered_policies, 'categories' => $db['categories']]);
         } else {
             send_json(['error' => 'Failed to remove policy rule from GitHub.', 'details' => $push_res['body']], $push_res['status']);
+        }
+    }
+
+    // Create or edit a category (hierarchical)
+    if ($action === 'save_category') {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            send_json(['error' => 'Method not allowed'], 405);
+        }
+        $data = json_decode(file_get_contents('php://input'), true);
+        $cat_id = $data['id'] ?? null;
+        $name = $data['name'] ?? '';
+        $parent_id = $data['parent_id'] ?? null; // Can be null, sub, or sub-sub
+
+        if (!$name) {
+            send_json(['error' => 'Category Name is mandatory.'], 400);
+        }
+
+        // Fetch current rules.json state from GitHub
+        $result = call_github_api('GET', "/contents/rules.json?ref={$branch}");
+        $db = ['categories' => [], 'policies' => []];
+        $sha = null;
+
+        if ($result['status'] === 200) {
+            $raw_content = base64_decode($result['body']['content']);
+            $db_raw = json_decode($raw_content, true) ?: [];
+            
+            // Normalize legacy flat array
+            if (is_array($db_raw) && !isset($db_raw['policies'])) {
+                $categories = [];
+                $policies = [];
+                $cat_map = [];
+                foreach ($db_raw as $old_rule) {
+                    $cat_name = $old_rule['category'] ?? 'General';
+                    if (!isset($cat_map[$cat_name])) {
+                        $cat_id_temp = 'cat_' . uniqid();
+                        $cat_map[$cat_name] = $cat_id_temp;
+                        $categories[] = [
+                            'id' => $cat_id_temp,
+                            'name' => $cat_name,
+                            'parent_id' => null
+                        ];
+                    }
+                    $old_rule['category_id'] = $cat_map[$cat_name];
+                    unset($old_rule['category']);
+                    $policies[] = $old_rule;
+                }
+                $db = [
+                    'categories' => $categories,
+                    'policies' => $policies
+                ];
+            } else {
+                $db = $db_raw;
+            }
+            $sha = $result['body']['sha'];
+        } elseif ($result['status'] !== 404) {
+            send_json(['error' => 'Unable to fetch current repository database.', 'details' => $result['body']], $result['status']);
+        }
+
+        // Ensure categories is initialized
+        if (!isset($db['categories'])) {
+            $db['categories'] = [];
+        }
+        if (!isset($db['policies'])) {
+            $db['policies'] = [];
+        }
+
+        $is_updating = false;
+        if ($cat_id) {
+            // Edit existing category
+            foreach ($db['categories'] as &$cat) {
+                if ($cat['id'] === $cat_id) {
+                    $cat['name'] = $name;
+                    $cat['parent_id'] = $parent_id ?: null;
+                    $is_updating = true;
+                    break;
+                }
+            }
+            $commit_msg = "HR Policy Update: Edited category '{$name}'";
+        }
+
+        if (!$is_updating) {
+            // Create new category
+            $new_cat = [
+                'id' => 'cat_' . uniqid(),
+                'name' => $name,
+                'parent_id' => $parent_id ?: null
+            ];
+            $db['categories'][] = $new_cat;
+            $commit_msg = "HR Policy Update: Created category '{$name}'";
+        }
+
+        // Commit updated rules.json to GitHub repository
+        $commit_payload = [
+            'message' => $commit_msg,
+            'content' => base64_encode(json_encode($db, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)),
+            'branch' => $branch
+        ];
+        if ($sha) {
+            $commit_payload['sha'] = $sha;
+        }
+
+        $push_res = call_github_api('PUT', "/contents/rules.json", $commit_payload);
+        if ($push_res['status'] === 200 || $push_res['status'] === 201) {
+            send_json(['success' => true, 'rules' => $db['policies'], 'categories' => $db['categories']]);
+        } else {
+            send_json(['error' => 'Failed to commit category updates to GitHub.', 'details' => $push_res['body']], $push_res['status']);
+        }
+    }
+
+    // Delete a category
+    if ($action === 'delete_category') {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            send_json(['error' => 'Method not allowed'], 405);
+        }
+        $data = json_decode(file_get_contents('php://input'), true);
+        $cat_id = $data['id'] ?? null;
+
+        if (!$cat_id) {
+            send_json(['error' => 'Missing Category ID for deletion.'], 400);
+        }
+
+        // Fetch current rules.json state from GitHub
+        $result = call_github_api('GET', "/contents/rules.json?ref={$branch}");
+        if ($result['status'] !== 200) {
+            send_json(['error' => 'Failed to access rules.json from GitHub.'], 400);
+        }
+
+        $raw_content = base64_decode($result['body']['content']);
+        $db = json_decode($raw_content, true) ?: [];
+        $sha = $result['body']['sha'];
+
+        if (is_array($db) && !isset($db['policies'])) {
+            send_json(['error' => 'Database was not migrated to hierarchical format. Cannot delete categories.'], 400);
+        }
+
+        // Ensure categories is initialized
+        if (!isset($db['categories'])) $db['categories'] = [];
+        if (!isset($db['policies'])) $db['policies'] = [];
+
+        // Check if this category has subcategories
+        $has_children = false;
+        foreach ($db['categories'] as $cat) {
+            if ($cat['parent_id'] === $cat_id) {
+                $has_children = true;
+                break;
+            }
+        }
+        if ($has_children) {
+            send_json(['error' => 'Cannot delete this category because it has active subcategories.'], 400);
+        }
+
+        // Check if this category has policies assigned to it
+        $has_policies = false;
+        foreach ($db['policies'] as $rule) {
+            if ($rule['category_id'] === $cat_id) {
+                $has_policies = true;
+                break;
+            }
+        }
+        if ($has_policies) {
+            send_json(['error' => 'Cannot delete this category because there are active policy rules assigned to it.'], 400);
+        }
+
+        // Filter and remove category
+        $filtered_categories = [];
+        $deleted_name = 'Unknown';
+        $item_found = false;
+
+        foreach ($db['categories'] as $cat) {
+            if ($cat['id'] === $cat_id) {
+                $deleted_name = $cat['name'];
+                $item_found = true;
+            } else {
+                $filtered_categories[] = $cat;
+            }
+        }
+
+        if (!$item_found) {
+            send_json(['error' => 'Category not found.'], 404);
+        }
+
+        $db['categories'] = $filtered_categories;
+
+        $commit_msg = "HR Policy Update: Deleted category '{$deleted_name}'";
+        $commit_payload = [
+            'message' => $commit_msg,
+            'content' => base64_encode(json_encode($db, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)),
+            'sha' => $sha,
+            'branch' => $branch
+        ];
+
+        $push_res = call_github_api('PUT', "/contents/rules.json", $commit_payload);
+        if ($push_res['status'] === 200 || $push_res['status'] === 201) {
+            send_json(['success' => true, 'rules' => $db['policies'], 'categories' => $db['categories']]);
+        } else {
+            send_json(['error' => 'Failed to remove category from GitHub.', 'details' => $push_res['body']], $push_res['status']);
         }
     }
 
@@ -1385,6 +1668,83 @@ if (isset($_GET['action'])) {
         }
 
         /* ---------------------------------
+           Category Tree Styles
+        ------------------------------------ */
+        .category-tree-container {
+            margin-top: 15px;
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid var(--border-standard);
+            border-radius: 8px;
+            padding: 16px;
+            background: #fafaf9;
+        }
+
+        .category-tree {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        .category-tree-node {
+            margin: 8px 0;
+            position: relative;
+        }
+
+        .category-node-content {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 14px;
+            background: #ffffff;
+            border: 1px solid var(--border-standard);
+            border-radius: 8px;
+            transition: all var(--transition-speed);
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+        }
+
+        .category-node-content:hover {
+            background: var(--color-brand-light);
+            border-color: var(--color-brand-border);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        }
+
+        .category-node-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--text-heading);
+            font-family: var(--font-paper);
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        .category-node-info i {
+            font-size: 1.1rem;
+        }
+
+        .category-node-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            opacity: 0;
+            transition: opacity var(--transition-speed);
+        }
+
+        .category-node-content:hover .category-node-actions {
+            opacity: 1;
+        }
+
+        .category-tree-children {
+            list-style: none;
+            padding-left: 28px;
+            border-left: 2px dashed #e2e8f0;
+            margin-left: 14px;
+            margin-top: 6px;
+            margin-bottom: 6px;
+        }
+
+        /* ---------------------------------
            Responsive adaptations
         ------------------------------------ */
         @media (max-width: 1024px) {
@@ -1661,6 +2021,23 @@ if (isset($_GET['action'])) {
                     </table>
                 </div>
 
+                <!-- Policy Category Management -->
+                <div style="margin-top: 35px; max-width: 900px;">
+                    <div class="git-status-card" style="background: var(--bg-surface);">
+                        <div class="git-status-title" style="justify-content: space-between; border-bottom: 1px solid var(--border-standard); padding-bottom: 12px; margin-bottom: 16px;">
+                            <span style="font-size: 1.1rem; font-weight: 700; color: var(--text-heading);">
+                                <i class="fa-solid fa-folder-tree" style="color: var(--color-brand);"></i> পলিসি ক্যাটাগরি ও সাব-ক্যাটাগরি ব্যবস্থাপনা (Category Tree)
+                            </span>
+                            <button class="btn btn-primary" style="width: auto; padding: 6px 12px; font-size: 0.8rem;" onclick="openAddCategoryModal(null)">
+                                <i class="fa-solid fa-plus"></i> মূল ক্যাটাগরি যোগ করুন
+                            </button>
+                        </div>
+                        <div id="admin-category-tree" class="category-tree-container">
+                            <!-- Dynamically populated by renderCategoryTree() -->
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Admin-Only Connection & Profile Settings -->
                 <div style="margin-top: 45px; display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; max-width: 900px;">
                     <!-- Company Profile Settings -->
@@ -1705,7 +2082,7 @@ if (isset($_GET['action'])) {
             <section id="view-timeline" class="view-section">
                 <div class="section-header">
                     <div>
-                        <h1 class="section-title">Audit Ledger & Chain of Custody</h1>
+                        <h1 class="section-title">Company Policy & Guidelines</h1>
                         <p class="section-subtitle">Chronological, cryptographically-signed policy revision trail</p>
                     </div>
                 </div>
@@ -1761,11 +2138,7 @@ if (isset($_GET['action'])) {
                         <label class="form-label" for="rule-category-input">Category Classification</label>
                         <div class="form-control-wrapper">
                             <select class="form-control" style="padding-left: 14px;" id="rule-category-input" required>
-                                <option value="Operations">Operations</option>
-                                <option value="Human Resources">Human Resources</option>
-                                <option value="Legal & Compliance">Legal & Compliance</option>
-                                <option value="Security">Security</option>
-                                <option value="Code of Conduct">Code of Conduct</option>
+                                <option value="" disabled selected>ক্যাটাগরি নির্বাচন করুন...</option>
                             </select>
                         </div>
                     </div>
@@ -1809,6 +2182,41 @@ if (isset($_GET['action'])) {
                 <button class="btn btn-secondary" style="width: auto;" onclick="cancelAdminAuth()">Cancel</button>
                 <button class="btn btn-primary" style="width: auto;" onclick="submitAdminAuth(event)">
                     <i class="fa-solid fa-key"></i> Authenticate
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Category Modal -->
+    <div class="modal" id="category-modal">
+        <div class="modal-overlay" onclick="closeCategoryModal()"></div>
+        <div class="modal-card" style="max-width: 450px;">
+            <div class="modal-header">
+                <h3 class="modal-title" id="category-modal-title">ক্যাটাগরি তৈরি করুন</h3>
+                <button class="modal-close" onclick="closeCategoryModal()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <form id="category-form" onsubmit="event.preventDefault(); submitCategoryForm();">
+                    <input type="hidden" id="category-id-input">
+                    <input type="hidden" id="category-parent-id-input">
+                    
+                    <div class="form-group" id="category-parent-info-group" style="display: none; margin-bottom: 15px;">
+                        <label class="form-label" style="font-weight: 600;">প্যারেন্ট ক্যাটাগরি (Parent Category)</label>
+                        <div id="category-parent-name-display" style="padding: 10px 14px; background: #f1f5f9; border-radius: 6px; font-size: 0.9rem; color: var(--text-heading); border: 1px solid var(--border-standard);"></div>
+                    </div>
+                    
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label class="form-label" for="category-name-input">ক্যাটাগরির নাম (Category Name)</label>
+                        <div class="form-control-wrapper">
+                            <input class="form-control" style="padding-left: 14px;" type="text" id="category-name-input" required placeholder="যেমন: ছুটি পলিসি">
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" style="width: auto;" onclick="closeCategoryModal()">বাতিল</button>
+                <button class="btn btn-primary" style="width: auto;" onclick="submitCategoryForm()">
+                    <i class="fa-solid fa-floppy-disk"></i> সংরক্ষণ করুন
                 </button>
             </div>
         </div>
@@ -1891,6 +2299,7 @@ if (isset($_GET['action'])) {
 
         // Client Cache
         let rulesCache = [];
+        let categoriesCache = [];
         let commitsCache = [];
         let currentRulesSha = null;
         let selectedCategoryFilter = 'All';
@@ -2121,6 +2530,7 @@ if (isset($_GET['action'])) {
             try {
                 const res = await fetchAPI('?action=get_rules');
                 rulesCache = res.rules;
+                categoriesCache = res.categories || [];
                 currentRulesSha = res.sha;
 
                 // Sync UI
@@ -2135,6 +2545,69 @@ if (isset($_GET['action'])) {
             }
         }
 
+        // Hierarchical category tree helpers
+        function buildCategoryTree(categories) {
+            const map = {};
+            const tree = [];
+            
+            categories.forEach(cat => {
+                map[cat.id] = { ...cat, children: [], policies: [] };
+            });
+            
+            rulesCache.forEach(rule => {
+                if (map[rule.category_id]) {
+                    map[rule.category_id].policies.push(rule);
+                }
+            });
+            
+            categories.forEach(cat => {
+                const node = map[cat.id];
+                if (cat.parent_id && map[cat.parent_id]) {
+                    map[cat.parent_id].children.push(node);
+                } else {
+                    tree.push(node);
+                }
+            });
+            
+            return tree;
+        }
+
+        function getDescendantCategoryIds(catId) {
+            const ids = [catId];
+            let checkList = [catId];
+            while (checkList.length > 0) {
+                const currentId = checkList.shift();
+                const children = categoriesCache.filter(c => c.parent_id === currentId);
+                children.forEach(child => {
+                    if (!ids.includes(child.id)) {
+                        ids.push(child.id);
+                        checkList.push(child.id);
+                    }
+                });
+            }
+            return ids;
+        }
+
+        function getCategoryPath(catId) {
+            const path = [];
+            let current = categoriesCache.find(c => c.id === catId);
+            while (current) {
+                path.unshift(current);
+                current = current.parent_id ? categoriesCache.find(c => c.id === current.parent_id) : null;
+            }
+            return path;
+        }
+
+        function getCategoryFullName(catId) {
+            const path = getCategoryPath(catId);
+            return path.length > 0 ? path.map(c => c.name).join(' ➔ ') : 'Uncategorized';
+        }
+
+        function getCategoryName(catId) {
+            const cat = categoriesCache.find(c => c.id === catId);
+            return cat ? cat.name : 'Uncategorized';
+        }
+
         function renderEmployeeRules() {
             const container = document.getElementById('employee-rules-grid');
             if (!container) return;
@@ -2142,12 +2615,20 @@ if (isset($_GET['action'])) {
 
             const searchVal = document.getElementById('employee-search').value.toLowerCase().trim();
 
-            // Filter rules first
+            // Filter rules first based on search term and category pills selection
             const filtered = rulesCache.filter(rule => {
+                const catName = getCategoryName(rule.category_id);
                 const matchSearch = rule.title.toLowerCase().includes(searchVal) || 
                                     rule.description.toLowerCase().includes(searchVal) ||
-                                    rule.category.toLowerCase().includes(searchVal);
-                const matchCategory = selectedCategoryFilter === 'All' || rule.category === selectedCategoryFilter;
+                                    catName.toLowerCase().includes(searchVal);
+                                    
+                let matchCategory = false;
+                if (selectedCategoryFilter === 'All') {
+                    matchCategory = true;
+                } else {
+                    const allowedIds = getDescendantCategoryIds(selectedCategoryFilter);
+                    matchCategory = allowedIds.includes(rule.category_id);
+                }
                 return matchSearch && matchCategory;
             });
 
@@ -2162,16 +2643,11 @@ if (isset($_GET['action'])) {
                 return;
             }
 
-            // Group by category (Chapter-wise)
-            const groups = {};
-            filtered.forEach(rule => {
-                if (!groups[rule.category]) {
-                    groups[rule.category] = [];
-                }
-                groups[rule.category].push(rule);
-            });
+            // Build hierarchical tree for rendering
+            const tree = buildCategoryTree(categoriesCache);
 
-            const sortedCategories = Object.keys(groups).sort();
+            // Separate policies that are uncategorized or invalid
+            const uncategorizedPolicies = filtered.filter(rule => !categoriesCache.some(c => c.id === rule.category_id));
 
             // Build the Policy Document container
             const docElement = document.createElement('div');
@@ -2193,39 +2669,129 @@ if (isset($_GET['action'])) {
                     <h4 style="font-family: var(--font-paper); font-weight: 700; font-size: 1.1rem; margin-bottom: 12px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; color: var(--text-heading);">সূচীপত্র (Table of Contents)</h4>
                     <ul style="list-style: none; padding-left: 0;">
             `;
-            sortedCategories.forEach((cat, index) => {
-                const chapterNum = index + 1;
+
+            // Recursive TOC generation
+            function generateTOC(nodes, parentPrefix = '', depth = 1) {
+                let tocHtml = '';
+                nodes.forEach((node, index) => {
+                    const currentPrefix = parentPrefix ? `${parentPrefix}.${index + 1}` : `${index + 1}`;
+                    const descendantIds = getDescendantCategoryIds(node.id);
+                    const totalPolicies = filtered.filter(r => descendantIds.includes(r.category_id)).length;
+                    
+                    if (totalPolicies === 0) return;
+                    
+                    const label = depth === 1 ? `অধ্যায় ${currentPrefix}` : `অনুচ্ছেদ ${currentPrefix}`;
+                    const padding = (depth - 1) * 20;
+                    
+                    tocHtml += `
+                        <li style="margin-bottom: 8px; display: flex; justify-content: space-between; font-size: 0.95rem; padding-left: ${padding}px;">
+                            <a href="#cat-section-${node.id}" style="color: var(--color-primary); text-decoration: none; font-family: var(--font-paper); font-weight: ${depth === 1 ? '700' : depth === 2 ? '600' : '400'};" onclick="scrollToChapter(event, 'cat-section-${node.id}')">
+                                ${label}: ${escapeHtml(node.name)}
+                            </a>
+                            <span style="border-bottom: 1px dotted #cbd5e1; flex-grow: 1; margin: 0 10px; margin-bottom: 4px;"></span>
+                            <span style="font-family: var(--font-mono); color: var(--text-muted); font-size: 0.85rem;">${totalPolicies} টি নিয়ম</span>
+                        </li>
+                    `;
+                    
+                    if (node.children && node.children.length > 0) {
+                        tocHtml += generateTOC(node.children, currentPrefix, depth + 1);
+                    }
+                });
+                return tocHtml;
+            }
+
+            html += generateTOC(tree, '', 1);
+
+            // If there are uncategorized policies, show them in TOC
+            if (uncategorizedPolicies.length > 0) {
+                const uncategorizedChapterNum = tree.length + 1;
                 html += `
                     <li style="margin-bottom: 8px; display: flex; justify-content: space-between; font-size: 0.95rem;">
-                        <a href="#chapter-${chapterNum}" style="color: var(--color-primary); text-decoration: none; font-family: var(--font-paper); font-weight: 600;" onclick="scrollToChapter(event, 'chapter-${chapterNum}')">
-                            অধ্যায় ${chapterNum}: ${escapeHtml(cat)}
+                        <a href="#cat-section-uncategorized" style="color: var(--color-primary); text-decoration: none; font-family: var(--font-paper); font-weight: 700;" onclick="scrollToChapter(event, 'cat-section-uncategorized')">
+                            অধ্যায় ${uncategorizedChapterNum}: অন্যান্য নীতিমালা (Uncategorized)
                         </a>
                         <span style="border-bottom: 1px dotted #cbd5e1; flex-grow: 1; margin: 0 10px; margin-bottom: 4px;"></span>
-                        <span style="font-family: var(--font-mono); color: var(--text-muted); font-size: 0.85rem;">${groups[cat].length} টি নিয়ম</span>
+                        <span style="font-family: var(--font-mono); color: var(--text-muted); font-size: 0.85rem;">${uncategorizedPolicies.length} টি নিয়ম</span>
                     </li>
                 `;
-            });
+            }
+
             html += `
                     </ul>
                 </div>
             `;
 
-            // Render Chapters and Sections
-            sortedCategories.forEach((cat, catIndex) => {
-                const chapterNum = catIndex + 1;
+            // Recursive body rendering
+            function generateBody(nodes, parentPrefix = '', depth = 1) {
+                let bodyHtml = '';
+                nodes.forEach((node, index) => {
+                    const currentPrefix = parentPrefix ? `${parentPrefix}.${index + 1}` : `${index + 1}`;
+                    const nodePolicies = filtered.filter(r => r.category_id === node.id);
+                    const descendantIds = getDescendantCategoryIds(node.id);
+                    const totalPolicies = filtered.filter(r => descendantIds.includes(r.category_id)).length;
+                    
+                    if (totalPolicies === 0) return;
+                    
+                    const headingFontSize = depth === 1 ? '1.4rem' : depth === 2 ? '1.2rem' : '1.05rem';
+                    const headingBorder = depth === 1 ? 'border-bottom: 2px solid #0f172a;' : depth === 2 ? 'border-bottom: 1px solid #64748b;' : 'border-bottom: 1px dashed #cbd5e1;';
+                    const marginVal = depth === 1 ? '40px' : depth === 2 ? '30px' : '20px';
+                    const label = depth === 1 ? `অধ্যায় ${currentPrefix}` : `অনুচ্ছেদ ${currentPrefix}`;
+                    
+                    bodyHtml += `
+                        <div id="cat-section-${node.id}" style="margin-top: ${marginVal}; scroll-margin-top: 20px;">
+                            <h3 style="font-family: var(--font-paper); font-weight: 700; font-size: ${headingFontSize}; color: var(--text-heading); ${headingBorder} padding-bottom: 6px; margin-bottom: 18px;">
+                                ${label}: ${escapeHtml(node.name)}
+                            </h3>
+                    `;
+                    
+                    nodePolicies.forEach((rule, ruleIndex) => {
+                        const sectionNum = `${currentPrefix}.${ruleIndex + 1}`;
+                        const updatedDate = new Date(rule.updated_at).toLocaleDateString(undefined, {
+                            year: 'numeric', month: 'short', day: 'numeric'
+                        });
+                        
+                        bodyHtml += `
+                            <div id="rule-card-${rule.id}" style="margin-bottom: 30px; padding-left: 14px; border-left: 3px solid #cbd5e1; transition: all 0.4s ease; scroll-margin-top: 60px;">
+                                <h4 style="font-family: var(--font-paper); font-weight: 600; font-size: 1.15rem; color: var(--text-heading); margin-bottom: 8px; display: flex; align-items: baseline; gap: 8px;">
+                                    <span style="font-family: var(--font-mono); color: var(--color-primary);">§ ${sectionNum}</span>
+                                    <a onclick="openDetailsModal('${rule.id}')" style="color: inherit; text-decoration: none; cursor: pointer;">
+                                        ${escapeHtml(rule.title)}
+                                    </a>
+                                </h4>
+                                <div style="font-family: var(--font-paper); font-size: 0.95rem; color: #334155; text-align: justify; white-space: pre-wrap; margin-bottom: 10px;">${escapeHtml(rule.description)}</div>
+                                <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; gap: 16px;">
+                                    <span>সংশোধনের তারিখ (Revised): ${updatedDate}</span>
+                                    <span style="font-family: var(--font-mono);">ID: ${rule.id}</span>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    
+                    if (node.children && node.children.length > 0) {
+                        bodyHtml += generateBody(node.children, currentPrefix, depth + 1);
+                    }
+                    
+                    bodyHtml += `</div>`;
+                });
+                return bodyHtml;
+            }
+
+            html += generateBody(tree, '', 1);
+
+            // Render uncategorized section if needed
+            if (uncategorizedPolicies.length > 0) {
+                const uncategorizedChapterNum = tree.length + 1;
                 html += `
-                    <div id="chapter-${chapterNum}" style="margin-top: 40px; scroll-margin-top: 20px;">
+                    <div id="cat-section-uncategorized" style="margin-top: 40px; scroll-margin-top: 20px;">
                         <h3 style="font-family: var(--font-paper); font-weight: 700; font-size: 1.4rem; color: var(--text-heading); border-bottom: 2px solid #0f172a; padding-bottom: 8px; margin-bottom: 24px;">
-                            অধ্যায় ${chapterNum}: ${escapeHtml(cat)}
+                            অধ্যায় ${uncategorizedChapterNum}: অন্যান্য নীতিমালা (Uncategorized)
                         </h3>
                 `;
-
-                groups[cat].forEach((rule, ruleIndex) => {
-                    const sectionNum = `${chapterNum}.${ruleIndex + 1}`;
+                uncategorizedPolicies.forEach((rule, ruleIndex) => {
+                    const sectionNum = `${uncategorizedChapterNum}.${ruleIndex + 1}`;
                     const updatedDate = new Date(rule.updated_at).toLocaleDateString(undefined, {
                         year: 'numeric', month: 'short', day: 'numeric'
                     });
-
                     html += `
                         <div id="rule-card-${rule.id}" style="margin-bottom: 30px; padding-left: 14px; border-left: 3px solid #cbd5e1; transition: all 0.4s ease; scroll-margin-top: 60px;">
                             <h4 style="font-family: var(--font-paper); font-weight: 600; font-size: 1.15rem; color: var(--text-heading); margin-bottom: 8px; display: flex; align-items: baseline; gap: 8px;">
@@ -2242,9 +2808,8 @@ if (isset($_GET['action'])) {
                         </div>
                     `;
                 });
-
                 html += `</div>`;
-            });
+            }
 
             docElement.innerHTML = html;
             container.appendChild(docElement);
@@ -2262,10 +2827,6 @@ if (isset($_GET['action'])) {
             const container = document.getElementById('employee-category-filters');
             if (!container) return;
 
-            // Gather unique categories
-            const categories = new Set();
-            rulesCache.forEach(r => categories.add(r.category));
-
             container.innerHTML = '';
             
             // Add "All" selector
@@ -2280,13 +2841,16 @@ if (isset($_GET['action'])) {
             };
             container.appendChild(allBtn);
 
+            // Get top-level categories
+            const topLevelCategories = categoriesCache.filter(c => !c.parent_id);
+
             // Add dynamic category pills
-            categories.forEach(cat => {
+            topLevelCategories.forEach(cat => {
                 const btn = document.createElement('span');
-                btn.className = `filter-tag ${selectedCategoryFilter === cat ? 'active' : ''}`;
-                btn.innerText = cat;
+                btn.className = `filter-tag ${selectedCategoryFilter === cat.id ? 'active' : ''}`;
+                btn.innerText = cat.name;
                 btn.onclick = () => {
-                    selectedCategoryFilter = cat;
+                    selectedCategoryFilter = cat.id;
                     document.querySelectorAll('.filter-tag').forEach(b => b.classList.remove('active'));
                     btn.classList.add('active');
                     renderEmployeeRules();
@@ -2316,8 +2880,9 @@ if (isset($_GET['action'])) {
 
             // Find matching policies
             const matches = rulesCache.filter(rule => {
+                const catName = getCategoryName(rule.category_id);
                 return rule.title.toLowerCase().includes(val) || 
-                       rule.category.toLowerCase().includes(val) ||
+                       catName.toLowerCase().includes(val) ||
                        rule.description.toLowerCase().includes(val);
             }).slice(0, 5); // Limit suggestions to 5 items
 
@@ -2331,7 +2896,7 @@ if (isset($_GET['action'])) {
             matches.forEach(rule => {
                 html += `
                     <div class="suggestion-item" onclick="selectSearchSuggestion('${rule.id}')">
-                        <span class="suggestion-category">${escapeHtml(rule.category)}</span>
+                        <span class="suggestion-category">${escapeHtml(getCategoryFullName(rule.category_id))}</span>
                         <span class="suggestion-title">${escapeHtml(rule.title)}</span>
                     </div>
                 `;
@@ -2404,7 +2969,7 @@ if (isset($_GET['action'])) {
             const rule = rulesCache.find(r => r.id === id);
             if (!rule) return;
 
-            document.getElementById('details-category-badge').innerText = rule.category;
+            document.getElementById('details-category-badge').innerText = getCategoryFullName(rule.category_id);
             document.getElementById('details-title').innerText = rule.title;
             document.getElementById('details-description').innerText = rule.description;
             
@@ -2425,8 +2990,11 @@ if (isset($_GET['action'])) {
             try {
                 const res = await fetchAPI('?action=get_rules');
                 rulesCache = res.rules;
+                categoriesCache = res.categories || [];
                 currentRulesSha = res.sha;
                 renderAdminRulesList();
+                renderCategoryTree();
+                populateCategoryDropdown();
             } catch(e) {}
             finally {
                 toggleLoading(false);
@@ -2439,11 +3007,12 @@ if (isset($_GET['action'])) {
             tbody.innerHTML = '';
 
             const searchVal = document.getElementById('admin-search').value.toLowerCase().trim();
-            const filtered = rulesCache.filter(rule => 
-                rule.title.toLowerCase().includes(searchVal) || 
-                rule.category.toLowerCase().includes(searchVal) || 
-                rule.description.toLowerCase().includes(searchVal)
-            );
+            const filtered = rulesCache.filter(rule => {
+                const catName = getCategoryFullName(rule.category_id);
+                return rule.title.toLowerCase().includes(searchVal) || 
+                       catName.toLowerCase().includes(searchVal) || 
+                       rule.description.toLowerCase().includes(searchVal);
+            });
 
             if (filtered.length === 0) {
                 tbody.innerHTML = `
@@ -2468,7 +3037,7 @@ if (isset($_GET['action'])) {
                 const shortDesc = rule.description.length > 80 ? rule.description.substring(0, 80) + '...' : rule.description;
 
                 tr.innerHTML = `
-                    <td><span class="rule-badge" style="margin-bottom:0; font-size: 0.7rem; background: rgba(30,58,138,0.05); border: 1px solid rgba(30,58,138,0.1); color: var(--color-primary);">${escapeHtml(rule.category)}</span></td>
+                    <td><span class="rule-badge" style="margin-bottom:0; font-size: 0.7rem; background: rgba(30,58,138,0.05); border: 1px solid rgba(30,58,138,0.1); color: var(--color-primary);">${escapeHtml(getCategoryFullName(rule.category_id))}</span></td>
                     <td style="font-weight: 600; color: var(--text-heading);">${escapeHtml(rule.title)}</td>
                     <td style="color: var(--text-body); max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(shortDesc)}</td>
                     <td style="color: var(--text-muted); font-size: 0.8rem;">${updateDate}</td>
@@ -2500,6 +3069,8 @@ if (isset($_GET['action'])) {
             document.getElementById('rule-form').reset();
             document.getElementById('rule-id-input').value = '';
 
+            populateCategoryDropdown();
+
             if (id) {
                 // Edit mode
                 const rule = rulesCache.find(r => r.id === id);
@@ -2507,13 +3078,224 @@ if (isset($_GET['action'])) {
                     titleEl.innerText = "Revise Company Policy";
                     document.getElementById('rule-id-input').value = rule.id;
                     document.getElementById('rule-title-input').value = rule.title;
-                    document.getElementById('rule-category-input').value = rule.category;
+                    document.getElementById('rule-category-input').value = rule.category_id;
                     document.getElementById('rule-desc-input').value = rule.description;
                 }
             } else {
                 titleEl.innerText = "Draft New Policy";
             }
             modal.style.display = 'flex';
+        }
+
+        function populateCategoryDropdown() {
+            const select = document.getElementById('rule-category-input');
+            if (!select) return;
+            
+            select.innerHTML = '<option value="" disabled selected>ক্যাটাগরি নির্বাচন করুন...</option>';
+            
+            const tree = buildCategoryTree(categoriesCache);
+            
+            function addOptions(nodes, depth = 0) {
+                nodes.forEach(node => {
+                    const option = document.createElement('option');
+                    option.value = node.id;
+                    const indent = '&nbsp;&nbsp;'.repeat(depth) + (depth > 0 ? '↳ ' : '');
+                    option.innerHTML = indent + escapeHtml(node.name);
+                    select.appendChild(option);
+                    
+                    if (node.children && node.children.length > 0) {
+                        addOptions(node.children, depth + 1);
+                    }
+                });
+            }
+            
+            addOptions(tree, 0);
+        }
+
+        function renderCategoryTree() {
+            const container = document.getElementById('admin-category-tree');
+            if (!container) return;
+            
+            if (categoriesCache.length === 0) {
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 20px; color: var(--text-muted); font-size: 0.9rem;">
+                        কোনো ক্যাটাগরি তৈরি করা হয়নি। (No categories created yet.)
+                    </div>
+                `;
+                return;
+            }
+            
+            const tree = buildCategoryTree(categoriesCache);
+            
+            function renderNode(node, depth = 1) {
+                const hasChildren = node.children && node.children.length > 0;
+                const policyCount = node.policies.length;
+                const canAddChild = depth < 3;
+                
+                let html = `
+                    <li class="category-tree-node" data-id="${node.id}">
+                        <div class="category-node-content">
+                            <div class="category-node-info">
+                                <i class="fa-solid ${depth === 1 ? 'fa-folder' : depth === 2 ? 'fa-folder-open' : 'fa-file-signature'}" style="color: ${depth === 1 ? '#dc2626' : depth === 2 ? '#b45309' : '#15803d'};"></i>
+                                <span>${escapeHtml(node.name)}</span>
+                                <span style="font-size: 0.75rem; color: var(--text-muted); font-family: var(--font-sans); font-weight: normal;">
+                                    (${policyCount} rules${hasChildren ? `, ${node.children.length} sub` : ''})
+                                </span>
+                            </div>
+                            <div class="category-node-actions">
+                                ${canAddChild ? `
+                                    <button class="btn-icon btn-icon-primary" style="padding: 2px 6px; font-size: 0.75rem;" title="সাব-ক্যাটাগরি যোগ করুন" onclick="openAddCategoryModal('${node.id}')">
+                                        <i class="fa-solid fa-plus"></i>
+                                    </button>
+                                ` : ''}
+                                <button class="btn-icon btn-icon-primary" style="padding: 2px 6px; font-size: 0.75rem;" title="নাম পরিবর্তন করুন" onclick="openEditCategoryModal('${node.id}')">
+                                    <i class="fa-solid fa-pen-to-square"></i>
+                                </button>
+                                <button class="btn-icon btn-icon-danger" style="padding: 2px 6px; font-size: 0.75rem;" title="মুছে ফেলুন" onclick="triggerDeleteCategory('${node.id}')">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                </button>
+                            </div>
+                        </div>
+                `;
+                
+                if (hasChildren) {
+                    html += `<ul class="category-tree-children">`;
+                    node.children.forEach(child => {
+                        html += renderNode(child, depth + 1);
+                    });
+                    html += `</ul>`;
+                }
+                
+                html += `</li>`;
+                return html;
+            }
+            
+            let treeHtml = '<ul class="category-tree">';
+            tree.forEach(node => {
+                treeHtml += renderNode(node, 1);
+            });
+            treeHtml += '</ul>';
+            
+            container.innerHTML = treeHtml;
+        }
+
+        function openAddCategoryModal(parentId = null) {
+            document.getElementById('category-form').reset();
+            document.getElementById('category-id-input').value = '';
+            document.getElementById('category-parent-id-input').value = parentId || '';
+            
+            const titleEl = document.getElementById('category-modal-title');
+            const parentGroup = document.getElementById('category-parent-info-group');
+            const parentNameDisplay = document.getElementById('category-parent-name-display');
+            
+            if (parentId) {
+                const parent = categoriesCache.find(c => c.id === parentId);
+                titleEl.innerText = "সাব-ক্যাটাগরি যোগ করুন (Add Sub-category)";
+                parentGroup.style.display = 'block';
+                parentNameDisplay.innerText = parent ? parent.name : 'Unknown';
+            } else {
+                titleEl.innerText = "নতুন মূল ক্যাটাগরি যোগ করুন (Add Main Category)";
+                parentGroup.style.display = 'none';
+            }
+            
+            document.getElementById('category-modal').style.display = 'flex';
+            document.getElementById('category-name-input').focus();
+        }
+
+        function openEditCategoryModal(id) {
+            const cat = categoriesCache.find(c => c.id === id);
+            if (!cat) return;
+            
+            document.getElementById('category-id-input').value = cat.id;
+            document.getElementById('category-parent-id-input').value = cat.parent_id || '';
+            document.getElementById('category-name-input').value = cat.name;
+            
+            const titleEl = document.getElementById('category-modal-title');
+            const parentGroup = document.getElementById('category-parent-info-group');
+            const parentNameDisplay = document.getElementById('category-parent-name-display');
+            
+            titleEl.innerText = "ক্যাটাগরি এডিট করুন (Edit Category)";
+            if (cat.parent_id) {
+                const parent = categoriesCache.find(c => c.id === cat.parent_id);
+                parentGroup.style.display = 'block';
+                parentNameDisplay.innerText = parent ? parent.name : 'Unknown';
+            } else {
+                parentGroup.style.display = 'none';
+            }
+            
+            document.getElementById('category-modal').style.display = 'flex';
+            document.getElementById('category-name-input').focus();
+        }
+
+        function closeCategoryModal() {
+            document.getElementById('category-modal').style.display = 'none';
+        }
+
+        async function submitCategoryForm() {
+            const name = document.getElementById('category-name-input').value.trim();
+            const id = document.getElementById('category-id-input').value;
+            const parent_id = document.getElementById('category-parent-id-input').value || null;
+            
+            if (!name) return;
+            
+            closeCategoryModal();
+            toggleLoading(true, "Saving category adjustments to GitHub...");
+            
+            try {
+                const res = await fetchAPI('?action=save_category', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id, name, parent_id })
+                });
+                
+                if (res.success) {
+                    showToast("Category configuration committed successfully!", "success");
+                    loadAdminData();
+                }
+            } catch (e) {
+                // Toast shown by fetchAPI wrapper
+            } finally {
+                toggleLoading(false);
+            }
+        }
+
+        async function triggerDeleteCategory(id) {
+            const cat = categoriesCache.find(c => c.id === id);
+            if (!cat) return;
+            
+            const hasChildren = categoriesCache.some(c => c.parent_id === id);
+            const hasRules = rulesCache.some(r => r.category_id === id);
+            
+            if (hasChildren) {
+                showToast("এই ক্যাটাগরি ডিলিট করা যাবে না কারণ এর অধীনে সাব-ক্যাটাগরি রয়েছে।", "warning");
+                return;
+            }
+            if (hasRules) {
+                showToast("এই ক্যাটাগরি ডিলিট করা যাবে না কারণ এর অধীনে নীতিমালা রয়েছে।", "warning");
+                return;
+            }
+            
+            if (!confirm(`আপনি কি নিশ্চিতভাবে "${cat.name}" ক্যাটাগরি ডিলিট করতে চান?`)) {
+                return;
+            }
+            
+            toggleLoading(true, "Removing category and committing registry back to GitHub...");
+            try {
+                const res = await fetchAPI('?action=delete_category', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id })
+                });
+                
+                if (res.success) {
+                    showToast("Category removed and committed successfully!", "success");
+                    loadAdminData();
+                }
+            } catch (e) {
+                // Toast shown by fetchAPI
+            } finally {
+                toggleLoading(false);
+            }
         }
 
         function closeRuleModal() {
@@ -2529,7 +3311,7 @@ if (isset($_GET['action'])) {
 
             const id = document.getElementById('rule-id-input').value;
             const title = document.getElementById('rule-title-input').value.trim();
-            const category = document.getElementById('rule-category-input').value;
+            const category_id = document.getElementById('rule-category-input').value;
             const description = document.getElementById('rule-desc-input').value.trim();
 
             closeRuleModal();
