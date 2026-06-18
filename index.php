@@ -2408,22 +2408,84 @@ if (isset($_GET['action'])) {
     </div>
 
     <!-- Rule Details Modal -->
+    <!-- Rule Details Modal -->
     <div class="modal" id="details-modal">
         <div class="modal-overlay" onclick="closeDetailsModal()"></div>
-        <div class="modal-card" style="max-width: 650px;">
-            <div class="modal-header">
-                <div>
-                    <span class="rule-badge" id="details-category-badge" style="margin-bottom: 8px;">Category</span>
-                    <h3 class="modal-title" id="details-title" style="margin-top: 4px;">Policy Title</h3>
+        <div class="modal-card" style="max-width: 750px; background: #f8fafc; padding: 0; border: none; overflow: hidden; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);">
+            <!-- Document Control Bar -->
+            <div style="background: #0f172a; color: #fff; padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b;">
+                <span style="font-size: 0.8rem; letter-spacing: 1px; font-weight: 600; text-transform: uppercase;"><i class="fa-solid fa-shield-halved text-success"></i> Secure Verification Registry</span>
+                <button onclick="closeDetailsModal()" style="background: transparent; border: none; color: #94a3b8; cursor: pointer; font-size: 1.1rem; transition: color 0.2s;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='#94a3b8'"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            
+            <!-- Document Scrollable Frame -->
+            <div style="max-height: 80vh; overflow-y: auto; padding: 40px 30px; background: #e2e8f0; display: flex; justify-content: center;">
+                <!-- Paper Sheet -->
+                <div class="document-paper" style="width: 100%; max-width: 650px; background: #fffcf8; border: 1px solid #cbd5e1; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); padding: 50px 40px; position: relative; font-family: var(--font-paper); color: #0f172a; border-radius: 2px;">
+                    
+                    <!-- Watermark -->
+                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); font-size: 4rem; font-weight: 900; color: rgba(15, 23, 42, 0.03); text-transform: uppercase; white-space: nowrap; pointer-events: none; user-select: none; z-index: 1;">OFFICIAL POLICY</div>
+                    
+                    <!-- Letterhead -->
+                    <div style="text-align: center; margin-bottom: 30px; position: relative; z-index: 2;">
+                        <div id="details-company-logo-container" style="margin-bottom: 12px; display: none;">
+                            <img id="details-company-logo" src="" alt="Company Logo" style="max-height: 55px; max-width: 180px; object-fit: contain;">
+                        </div>
+                        <h2 id="details-company-name" style="font-family: var(--font-paper); font-size: 1.4rem; font-weight: 700; letter-spacing: 1.5px; color: #1e3a8a; margin: 0 0 4px 0; text-transform: uppercase;">Company Name</h2>
+                        <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 2px; color: #475569; font-weight: 600;">Corporate Policy & Compliance Resolution</div>
+                        
+                        <!-- Formal Divider Line -->
+                        <div style="margin-top: 15px; border-bottom: 3px double #1e3a8a;"></div>
+                    </div>
+                    
+                    <!-- Document Metadata Block -->
+                    <div style="background: rgba(30, 58, 138, 0.02); border: 1px solid rgba(30, 58, 138, 0.08); padding: 16px 20px; font-size: 0.8rem; margin-bottom: 30px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; color: #334155; position: relative; z-index: 2; border-radius: 4px;">
+                        <div><strong>শ্রেণীবিভাগ (Category):</strong> <span id="details-doc-category" style="color: #1e3a8a;">Category Name</span></div>
+                        <div><strong>নথি আইডি (Document ID):</strong> <span id="details-doc-id" style="font-family: var(--font-mono); font-size: 0.75rem;">rule_id</span></div>
+                        <div><strong>কার্যকরী তারিখ (Effective Date):</strong> <span id="details-doc-created">Date</span></div>
+                        <div><strong>অবস্থা (Status):</strong> <span style="background: #dcfce7; color: #15803d; padding: 2px 6px; border-radius: 12px; font-size: 0.7rem; font-weight: 600;"><i class="fa-solid fa-circle-check"></i> Approved & Verified</span></div>
+                    </div>
+                    
+                    <!-- Document Content -->
+                    <div style="position: relative; z-index: 2;">
+                        <!-- Section and Title -->
+                        <h3 id="details-doc-title" style="font-family: var(--font-paper); font-size: 1.25rem; font-weight: 700; color: #0f172a; margin-top: 0; margin-bottom: 20px; line-height: 1.4; border-bottom: 1px solid #e2e8f0; padding-bottom: 12px; display: flex; align-items: baseline; gap: 8px;">
+                            <i class="fa-solid fa-scale-balanced text-primary" style="font-size: 1rem;"></i>
+                            <span>Policy Title</span>
+                        </h3>
+                        
+                        <!-- Policy Body -->
+                        <div id="details-doc-description" style="font-size: 0.95rem; line-height: 1.75; text-align: justify; white-space: pre-wrap; color: #334155; margin-bottom: 40px; font-family: var(--font-paper);">
+                            Policy body goes here...
+                        </div>
+                    </div>
+                    
+                    <!-- Signatures & Corporate Seal Section -->
+                    <div style="margin-top: 50px; display: flex; justify-content: space-between; align-items: flex-end; position: relative; z-index: 2;">
+                        <!-- Corporate Seal -->
+                        <div style="width: 100px; height: 100px; border: 2px dashed rgba(220, 38, 38, 0.4); border-radius: 50%; display: flex; flex-direction: column; justify-content: center; align-items: center; color: rgba(220, 38, 38, 0.5); font-weight: bold; font-size: 0.65rem; text-align: center; text-transform: uppercase; transform: rotate(-15deg); padding: 4px; pointer-events: none; user-select: none;">
+                            <div style="border: 1px solid rgba(220, 38, 38, 0.3); border-radius: 50%; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                                <i class="fa-solid fa-shield-check" style="font-size: 1rem; margin-bottom: 2px;"></i>
+                                <div style="font-size: 0.5rem; font-weight: 700; line-height: 1.1;">CORPORATE<br>SEAL</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Signature Lines -->
+                        <div style="text-align: right; width: 220px;">
+                            <!-- Digital Signature Placeholder -->
+                            <div style="font-family: 'Georgia', serif; font-style: italic; color: #1e3a8a; font-size: 1.1rem; margin-bottom: 4px; padding-right: 20px;">Authorized Resolution</div>
+                            <div style="border-top: 1px solid #475569; margin-top: 8px; padding-top: 4px; font-size: 0.75rem; color: #475569; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
+                                Board of Directors / CEO<br>
+                                <span style="font-size: 0.65rem; font-weight: normal; text-transform: none; color: #64748b;" class="seal-company-name">Bongo Limited Company</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <button class="modal-close" onclick="closeDetailsModal()"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <div class="modal-body" style="font-size: 0.95rem; line-height: 1.7; color: var(--text-heading); font-family: var(--font-paper);">
-                <div id="details-description" style="white-space: pre-wrap; text-align: justify;">Policy content...</div>
-            </div>
-            <div class="modal-footer" style="justify-content: space-between; align-items: center;">
-                <span class="commit-date" id="details-dates" style="font-size: 0.75rem;">Created: - | Updated: -</span>
-                <button class="btn btn-secondary" style="width: auto;" onclick="closeDetailsModal()">Close</button>
+            
+            <!-- Control Bar Footer -->
+            <div style="background: #f1f5f9; padding: 12px 24px; display: flex; justify-content: flex-end; border-top: 1px solid #e2e8f0;">
+                <button class="btn btn-secondary" style="width: auto; padding: 8px 20px; font-size: 0.85rem;" onclick="closeDetailsModal()"><i class="fa-solid fa-circle-xmark"></i> বন্ধ করুন</button>
             </div>
         </div>
     </div>
@@ -2488,6 +2550,13 @@ if (isset($_GET['action'])) {
         let commitsCache = [];
         let currentRulesSha = null;
         let selectedCategoryFilter = 'All';
+        function toBengaliNumerals(str) {
+            const BENGALI_DIGITS = {
+                '0': '০', '1': '১', '2': '২', '3': '৩', '4': '৪',
+                '5': '৫', '6': '৬', '7': '৭', '8': '৮', '9': '৯'
+            };
+            return str.toString().replace(/[0-9]/g, char => BENGALI_DIGITS[char] || char);
+        }
         let isAdminAuthenticated = sessionStorage.getItem('admin_token') ? true : false;
         let activeView = 'rules';
 
@@ -2979,7 +3048,7 @@ if (isset($_GET['action'])) {
                         bodyHtml += `
                             <div id="rule-card-${rule.id}" style="margin-bottom: 30px; padding-left: 14px; border-left: 3px solid #cbd5e1; transition: all 0.4s ease; scroll-margin-top: 60px;">
                                 <h4 style="font-family: var(--font-paper); font-weight: 600; font-size: 1.15rem; color: var(--text-heading); margin-bottom: 8px; display: flex; align-items: baseline; gap: 8px;">
-                                    <span style="font-family: var(--font-mono); color: var(--color-primary);">§ ${sectionNum}</span>
+                                    <span style="color: var(--color-primary); font-family: var(--font-paper); display: inline-flex; align-items: center; gap: 6px;"><i class="fa-solid fa-scale-balanced" style="font-size: 0.9rem;"></i> ${toBengaliNumerals(sectionNum)}</span>
                                     <a onclick="openDetailsModal('${rule.id}')" style="color: inherit; text-decoration: none; cursor: pointer;">
                                         ${escapeHtml(rule.title)}
                                     </a>
@@ -3029,7 +3098,7 @@ if (isset($_GET['action'])) {
                     html += `
                         <div id="rule-card-${rule.id}" style="margin-bottom: 30px; padding-left: 14px; border-left: 3px solid #cbd5e1; transition: all 0.4s ease; scroll-margin-top: 60px;">
                             <h4 style="font-family: var(--font-paper); font-weight: 600; font-size: 1.15rem; color: var(--text-heading); margin-bottom: 8px; display: flex; align-items: baseline; gap: 8px;">
-                                <span style="font-family: var(--font-mono); color: var(--color-primary);">§ ${sectionNum}</span>
+                                <span style="color: var(--color-primary); font-family: var(--font-paper); display: inline-flex; align-items: center; gap: 6px;"><i class="fa-solid fa-scale-balanced" style="font-size: 0.9rem;"></i> ${toBengaliNumerals(sectionNum)}</span>
                                 <a onclick="openDetailsModal('${rule.id}')" style="color: inherit; text-decoration: none; cursor: pointer;">
                                     ${escapeHtml(rule.title)}
                                 </a>
@@ -3203,22 +3272,46 @@ if (isset($_GET['action'])) {
             const rule = rulesCache.find(r => r.id === id);
             if (!rule) return;
 
-            document.getElementById('details-category-badge').innerText = getCategoryFullName(rule.category_id);
-            document.getElementById('details-title').innerText = rule.title;
-            document.getElementById('details-description').innerText = rule.description;
+            // Populate Letterhead Company Details
+            const compName = APP_CONFIG.companyName || 'Office Policy System';
+            document.getElementById('details-company-name').innerText = compName;
+            document.querySelectorAll('.seal-company-name').forEach(el => {
+                el.innerText = compName;
+            });
             
-            const created = new Date(rule.created_at || rule.updated_at).toLocaleString();
-            const updated = new Date(rule.updated_at).toLocaleString();
+            const logoImg = document.getElementById('details-company-logo');
+            const logoContainer = document.getElementById('details-company-logo-container');
+            if (APP_CONFIG.companyLogoUrl) {
+                logoImg.src = APP_CONFIG.companyLogoUrl;
+                logoContainer.style.display = 'block';
+            } else {
+                logoContainer.style.display = 'none';
+            }
+
+            // Populate metadata
+            document.getElementById('details-doc-category').innerText = getCategoryFullName(rule.category_id);
+            document.getElementById('details-doc-id').innerText = rule.id;
+            
+            const created = new Date(rule.created_at || rule.updated_at).toLocaleDateString(undefined, {
+                year: 'numeric', month: 'short', day: 'numeric'
+            });
+            const updated = new Date(rule.updated_at).toLocaleDateString(undefined, {
+                year: 'numeric', month: 'short', day: 'numeric'
+            });
             
             const createdTime = new Date(rule.created_at || rule.updated_at).getTime();
             const updatedTime = new Date(rule.updated_at).getTime();
             const isRevised = createdTime && updatedTime && Math.abs(updatedTime - createdTime) > 1000;
             
             if (isRevised) {
-                document.getElementById('details-dates').innerText = `Enacted: ${created} | Revised: ${updated}`;
+                document.getElementById('details-doc-created').innerText = `${created} (Revised: ${updated})`;
             } else {
-                document.getElementById('details-dates').innerText = `Enacted: ${created}`;
+                document.getElementById('details-doc-created').innerText = created;
             }
+
+            // Populate Content
+            document.getElementById('details-doc-title').querySelector('span').innerText = rule.title;
+            document.getElementById('details-doc-description').innerText = rule.description;
 
             document.getElementById('details-modal').style.display = 'flex';
         }
