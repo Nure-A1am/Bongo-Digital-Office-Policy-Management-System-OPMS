@@ -1723,7 +1723,7 @@ if (isset($_GET['action'])) {
                     </div>
                     <!-- MODULE 4: Legal Export Button -->
                     <button class="btn btn-primary" style="width: auto; background: var(--color-success); box-shadow: 0 4px 14px rgba(21, 128, 61, 0.15);" onclick="generateLegalPDF()">
-                        <i class="fa-solid fa-file-pdf"></i> সংশোধনী খতিয়ান ডাউনলোড
+                        <i class="fa-solid fa-file-pdf"></i> Download Change Ledger
                     </button>
                 </div>
 
