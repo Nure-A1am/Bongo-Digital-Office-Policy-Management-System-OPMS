@@ -2969,6 +2969,13 @@ if (isset($_GET['action'])) {
                             year: 'numeric', month: 'short', day: 'numeric'
                         });
                         
+                        const createdTime = new Date(rule.created_at || rule.updated_at).getTime();
+                        const updatedTime = new Date(rule.updated_at).getTime();
+                        const isRevised = createdTime && updatedTime && Math.abs(updatedTime - createdTime) > 1000;
+                        const dateLabel = isRevised 
+                            ? `সংশোধনের তারিখ (Revised): ${updatedDate}` 
+                            : `প্রকাশের তারিখ (Published): ${updatedDate}`;
+                        
                         bodyHtml += `
                             <div id="rule-card-${rule.id}" style="margin-bottom: 30px; padding-left: 14px; border-left: 3px solid #cbd5e1; transition: all 0.4s ease; scroll-margin-top: 60px;">
                                 <h4 style="font-family: var(--font-paper); font-weight: 600; font-size: 1.15rem; color: var(--text-heading); margin-bottom: 8px; display: flex; align-items: baseline; gap: 8px;">
@@ -2979,7 +2986,7 @@ if (isset($_GET['action'])) {
                                 </h4>
                                 <div style="font-family: var(--font-paper); font-size: 0.95rem; color: #334155; text-align: justify; white-space: pre-wrap; margin-bottom: 10px;">${escapeHtml(rule.description)}</div>
                                 <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; gap: 16px;">
-                                    <span>সংশোধনের তারিখ (Revised): ${updatedDate}</span>
+                                    <span>${dateLabel}</span>
                                     <span style="font-family: var(--font-mono);">ID: ${rule.id}</span>
                                 </div>
                             </div>
@@ -3011,6 +3018,14 @@ if (isset($_GET['action'])) {
                     const updatedDate = new Date(rule.updated_at).toLocaleDateString(undefined, {
                         year: 'numeric', month: 'short', day: 'numeric'
                     });
+                    
+                    const createdTime = new Date(rule.created_at || rule.updated_at).getTime();
+                    const updatedTime = new Date(rule.updated_at).getTime();
+                    const isRevised = createdTime && updatedTime && Math.abs(updatedTime - createdTime) > 1000;
+                    const dateLabel = isRevised 
+                        ? `সংশোধনের তারিখ (Revised): ${updatedDate}` 
+                        : `প্রকাশের তারিখ (Published): ${updatedDate}`;
+                    
                     html += `
                         <div id="rule-card-${rule.id}" style="margin-bottom: 30px; padding-left: 14px; border-left: 3px solid #cbd5e1; transition: all 0.4s ease; scroll-margin-top: 60px;">
                             <h4 style="font-family: var(--font-paper); font-weight: 600; font-size: 1.15rem; color: var(--text-heading); margin-bottom: 8px; display: flex; align-items: baseline; gap: 8px;">
@@ -3021,7 +3036,7 @@ if (isset($_GET['action'])) {
                             </h4>
                             <div style="font-family: var(--font-paper); font-size: 0.95rem; color: #334155; text-align: justify; white-space: pre-wrap; margin-bottom: 10px;">${escapeHtml(rule.description)}</div>
                             <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; gap: 16px;">
-                                <span>সংশোধনের তারিখ (Revised): ${updatedDate}</span>
+                                <span>${dateLabel}</span>
                                 <span style="font-family: var(--font-mono);">ID: ${rule.id}</span>
                             </div>
                         </div>
@@ -3115,7 +3130,7 @@ if (isset($_GET['action'])) {
             matches.forEach(rule => {
                 html += `
                     <div class="suggestion-item" onclick="selectSearchSuggestion('${rule.id}')">
-                        <span class="suggestion-category">${escapeHtml(getCategoryFullName(rule.category_id))}</span>
+                        <span class="suggestion-category">${escapeHtml(getCategoryName(rule.category_id))}</span>
                         <span class="suggestion-title">${escapeHtml(rule.title)}</span>
                     </div>
                 `;
@@ -3192,9 +3207,18 @@ if (isset($_GET['action'])) {
             document.getElementById('details-title').innerText = rule.title;
             document.getElementById('details-description').innerText = rule.description;
             
-            const created = new Date(rule.created_at).toLocaleString();
+            const created = new Date(rule.created_at || rule.updated_at).toLocaleString();
             const updated = new Date(rule.updated_at).toLocaleString();
-            document.getElementById('details-dates').innerText = `Enacted: ${created} | Revised: ${updated}`;
+            
+            const createdTime = new Date(rule.created_at || rule.updated_at).getTime();
+            const updatedTime = new Date(rule.updated_at).getTime();
+            const isRevised = createdTime && updatedTime && Math.abs(updatedTime - createdTime) > 1000;
+            
+            if (isRevised) {
+                document.getElementById('details-dates').innerText = `Enacted: ${created} | Revised: ${updated}`;
+            } else {
+                document.getElementById('details-dates').innerText = `Enacted: ${created}`;
+            }
 
             document.getElementById('details-modal').style.display = 'flex';
         }
