@@ -439,6 +439,9 @@ if (isset($_GET['action'])) {
             --bg-surface: #ffffff;
             --bg-surface-solid: #ffffff;
             --bg-sidebar: #fcfaf7; /* Ivory/Cream Paper Sidebar */
+            --color-brand: #dc2626; /* Bongo Brand Red (Primary Red) */
+            --color-brand-light: #fef2f2; /* Soft brand red background */
+            --color-brand-border: #fee2e2; /* Soft brand red border */
             --border-glow: rgba(59, 130, 246, 0.15);
             --border-standard: #e2e8f0;
             --color-primary: #1e3a8a; /* Deep Royal Navy */
@@ -669,19 +672,19 @@ if (isset($_GET['action'])) {
             z-index: 100;
             display: flex;
             flex-direction: column;
-            border-right: 4px double #bcaaa4; /* Formal double border */
+            border-right: 4px double var(--color-brand-border); /* Matched to brand color */
         }
-
+ 
         .sidebar-brand {
             padding: 30px 20px;
-            border-bottom: 1px solid #e2dad0;
+            border-bottom: 1px solid var(--color-brand-light);
             display: flex;
             flex-direction: column;
             align-items: center;
             text-align: center;
             gap: 14px;
         }
-
+ 
         .sidebar-logo-container {
             width: 70px;
             height: 70px;
@@ -690,45 +693,45 @@ if (isset($_GET['action'])) {
             justify-content: center;
             border-radius: 50%;
             overflow: hidden;
-            border: 2px solid #bcaaa4;
+            border: 2px solid var(--color-brand);
             background: #ffffff;
-            box-shadow: 0 3px 6px rgba(0,0,0,0.06);
+            box-shadow: 0 3px 6px rgba(220,38,38,0.08);
         }
-
+ 
         .sidebar-logo-img {
             width: 100%;
             height: 100%;
             object-fit: cover;
         }
-
+ 
         /* Default Seal Emblem */
         .sidebar-default-seal {
             width: 70px;
             height: 70px;
             border-radius: 50%;
-            background: radial-gradient(circle, #a83220 30%, #801a1a 100%);
-            border: 3px double #e6c280;
+            background: radial-gradient(circle, #ef4444 30%, var(--color-brand) 100%);
+            border: 3px double #fef08a;
             display: flex;
             align-items: center;
             justify-content: center;
-            color: #e6c280;
+            color: #fef08a;
             font-size: 1.6rem;
-            box-shadow: 0 4px 8px rgba(128,26,26,0.3), inset 0 2px 4px rgba(255,255,255,0.2);
+            box-shadow: 0 4px 8px rgba(220,38,38,0.25), inset 0 2px 4px rgba(255,255,255,0.15);
             position: relative;
         }
-
+ 
         .sidebar-title {
             font-family: var(--font-paper);
             font-size: 1.25rem;
             font-weight: 700;
-            color: #2d1e18;
+            color: #1e293b;
             line-height: 1.3;
             text-shadow: 0 1px 0 rgba(255,255,255,0.5);
             margin: 0;
             word-break: break-word;
             white-space: normal;
         }
-
+ 
         .sidebar-menu {
             list-style: none;
             padding: 24px 0;
@@ -737,13 +740,13 @@ if (isset($_GET['action'])) {
             gap: 4px;
             flex-grow: 1;
         }
-
+ 
         .menu-link {
             display: flex;
             align-items: center;
             gap: 14px;
             padding: 12px 24px;
-            color: #5c4d43;
+            color: #475569;
             text-decoration: none;
             font-family: var(--font-paper);
             font-weight: 600;
@@ -751,17 +754,17 @@ if (isset($_GET['action'])) {
             transition: all var(--transition-speed);
             border-left: 4px solid transparent;
         }
-
+ 
         .menu-link:hover {
-            color: #2d1e18;
-            background: #eae5dc;
-            border-left: 4px solid #bcaaa4;
+            color: var(--color-brand);
+            background: var(--color-brand-light);
+            border-left: 4px solid var(--color-brand-border);
         }
-
+ 
         .menu-link.active {
-            color: #1e140f;
-            background: #e2dad0;
-            border-left: 4px solid #801a1a;
+            color: var(--color-brand);
+            background: var(--color-brand-light);
+            border-left: 4px solid var(--color-brand);
             font-weight: 700;
         }
 
