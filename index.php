@@ -1699,9 +1699,17 @@ if (isset($_GET['action'])) {
 
         .category-filters {
             display: flex;
-            flex-wrap: wrap;
+            flex-wrap: nowrap;
+            overflow-x: auto;
             gap: 10px;
             width: 100%;
+            padding: 4px 0 8px 0;
+            scrollbar-width: none; /* Firefox */
+            -ms-overflow-style: none; /* IE 10+ */
+        }
+
+        .category-filters::-webkit-scrollbar {
+            display: none; /* Safari and Chrome */
         }
 
         .filter-tag {
@@ -1718,6 +1726,8 @@ if (isset($_GET['action'])) {
             transition: all var(--transition-speed);
             user-select: none;
             box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+            white-space: nowrap;
+            flex-shrink: 0;
         }
 
         .filter-tag:hover {
