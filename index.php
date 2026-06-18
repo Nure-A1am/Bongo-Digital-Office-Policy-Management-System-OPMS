@@ -3361,14 +3361,16 @@ if (isset($_GET['action'])) {
                 const res = await fetchAPI('?action=save_rule', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id, title, category, description })
+                    body: JSON.stringify({ id, title, category_id, description })
                 });
 
                 if (res.success) {
                     showToast(id ? "Policy modified and committed successfully!" : "New policy drafted and committed successfully!", "success");
                     loadAdminData();
                 }
-            } catch(e) {}
+            } catch(e) {
+                console.error(e);
+            }
             finally {
                 toggleLoading(false);
             }
