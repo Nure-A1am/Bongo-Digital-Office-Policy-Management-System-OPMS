@@ -1424,11 +1424,6 @@ if (isset($_GET['action'])) {
                     </a>
                 </li>
                 <li>
-                    <a href="#admin" class="menu-link" onclick="navigateSPA('admin', event)">
-                        <i class="fa-solid fa-gears"></i> Admin Panel
-                    </a>
-                </li>
-                <li>
                     <a href="#timeline" class="menu-link" onclick="navigateSPA('timeline', event)">
                         <i class="fa-solid fa-receipt"></i> Change Ledger
                     </a>
@@ -2900,10 +2895,40 @@ if (isset($_GET['action'])) {
                 // Initialize View Router & load rulebook default page
                 document.getElementById('app').style.display = 'flex';
                 
-                // Read anchor hash from window URL or default
-                const view = window.location.hash.substring(1) || 'rules';
+                // Read path or hash to determine the view
+                const path = window.location.pathname.toLowerCase();
+                const hash = window.location.hash.toLowerCase();
+                
+                let view = 'rules';
+                if (path.endsWith('/admin') || path.endsWith('/login') || hash === '#admin' || hash === '#login') {
+                    view = 'admin';
+                } else if (hash === '#timeline') {
+                    view = 'timeline';
+                } else if (hash === '#rules') {
+                    view = 'rules';
+                } else {
+                    view = hash.substring(1) || 'rules';
+                }
+                
                 navigateSPA(view);
             }
+        });
+
+        // Handle hashchange for SPA navigation
+        window.addEventListener('hashchange', () => {
+            if (!APP_CONFIG.isConfigured) return;
+            const hash = window.location.hash.toLowerCase();
+            let view = 'rules';
+            if (hash === '#admin' || hash === '#login') {
+                view = 'admin';
+            } else if (hash === '#timeline') {
+                view = 'timeline';
+            } else if (hash === '#rules') {
+                view = 'rules';
+            } else {
+                view = hash.substring(1) || 'rules';
+            }
+            navigateSPA(view);
         });
     </script>
 </body>
