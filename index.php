@@ -4,7 +4,8 @@
  * Single-file PHP/JS SPA (GitOps Architecture)
  */
 
-define('CONFIG_FILE', __DIR__ . '/config.json');
+define('CONFIG_FILE_PHP', __DIR__ . '/config.php');
+define('CONFIG_FILE_JSON', __DIR__ . '/config.json');
 
 // Helper function to send JSON API response
 function send_json($data, $status = 200) {
@@ -14,8 +15,106 @@ function send_json($data, $status = 200) {
     exit;
 }
 
-// Load current configuration if exists (supports server environment variables or config.json)
+// Helper function to write configuration as PHP file returning an array
+function save_config_php($config_data) {
+    $content = "<?php\n";
+    $content .= "if (!defined('SECURE_CONFIG')) {\n";
+    $content .= "    header('HTTP/1.1 403 Forbidden');\n";
+    $content .= "    exit('Direct access forbidden');\n";
+    $content .= "}\n";
+    $content .= "return " . var_export($config_data, true) . ";\n";
+    return file_put_contents(CONFIG_FILE_PHP, $content) !== false;
+}
+
+// Token helper functions for stateless HMAC authentication
+function generate_auth_token($config) {
+    $issued_at = time();
+    $expires_at = $issued_at + 7200; // 2 hours validity
+    
+    $payload = [
+        'issued_at' => $issued_at,
+        'expires_at' => $expires_at
+    ];
+    
+    $payload_json = json_encode($payload);
+    $payload_base64 = base64_encode($payload_json);
+    
+    $github_token = $config['github_token'] ?? '';
+    $passcode_hash = $config['admin_passcode'] ?? '';
+    $signing_key = hash_hmac('sha256', $github_token, $passcode_hash);
+    
+    $signature = hash_hmac('sha256', $payload_base64, $signing_key);
+    return $payload_base64 . '.' . $signature;
+}
+
+function verify_auth_token($token_str, $config) {
+    if (!$token_str) {
+        return false;
+    }
+    $parts = explode('.', $token_str);
+    if (count($parts) !== 2) {
+        return false;
+    }
+    list($payload_base64, $signature) = $parts;
+    
+    $github_token = $config['github_token'] ?? '';
+    $passcode_hash = $config['admin_passcode'] ?? '';
+    $signing_key = hash_hmac('sha256', $github_token, $passcode_hash);
+    
+    $expected_signature = hash_hmac('sha256', $payload_base64, $signing_key);
+    if (!hash_equals($expected_signature, $signature)) {
+        return false;
+    }
+    
+    $payload_json = base64_decode($payload_base64);
+    if (!$payload_json) {
+        return false;
+    }
+    
+    $payload = json_decode($payload_json, true);
+    if (!$payload || !isset($payload['expires_at'])) {
+        return false;
+    }
+    
+    if (time() > $payload['expires_at']) {
+        return false;
+    }
+    
+    return true;
+}
+
+function get_bearer_token() {
+    $headers = null;
+    if (isset($_SERVER['Authorization'])) {
+        $headers = trim($_SERVER["Authorization"]);
+    } else if (isset($_SERVER['HTTP_AUTHORIZATION'])) {
+        $headers = trim($_SERVER["HTTP_AUTHORIZATION"]);
+    } elseif (function_exists('apache_request_headers')) {
+        $requestHeaders = apache_request_headers();
+        $requestHeaders = array_change_key_case($requestHeaders, CASE_LOWER);
+        if (isset($requestHeaders['authorization'])) {
+            $headers = trim($requestHeaders['authorization']);
+        }
+    }
+    
+    if (!empty($headers)) {
+        if (preg_match('/Bearer\s(\S+)/i', $headers, $matches)) {
+            return $matches[1];
+        }
+    }
+    return null;
+}
+
+function require_admin_auth($config) {
+    $token = get_bearer_token();
+    if (!$token || !verify_auth_token($token, $config)) {
+        send_json(['error' => 'Unauthorized: Invalid or expired admin session.'], 401);
+    }
+}
+
+// Load current configuration if exists (supports server environment variables or config.php/config.json)
 $config = [];
+$is_configured = false;
 if (getenv('OPMS_GITHUB_TOKEN') && getenv('OPMS_REPO_OWNER') && getenv('OPMS_REPO_NAME')) {
     $config = [
         'github_token' => getenv('OPMS_GITHUB_TOKEN'),
@@ -28,9 +127,13 @@ if (getenv('OPMS_GITHUB_TOKEN') && getenv('OPMS_REPO_OWNER') && getenv('OPMS_REP
     ];
     $is_configured = true;
 } else {
-    $is_configured = file_exists(CONFIG_FILE);
-    if ($is_configured) {
-        $config = json_decode(file_get_contents(CONFIG_FILE), true);
+    define('SECURE_CONFIG', true);
+    if (file_exists(CONFIG_FILE_PHP)) {
+        $config = require CONFIG_FILE_PHP;
+        $is_configured = true;
+    } elseif (file_exists(CONFIG_FILE_JSON)) {
+        $config = json_decode(file_get_contents(CONFIG_FILE_JSON), true);
+        $is_configured = true;
     }
 }
 
@@ -40,6 +143,9 @@ if (isset($_GET['action'])) {
 
     // Setup Gatekeeper API
     if ($action === 'save_setup') {
+        if ($is_configured) {
+            require_admin_auth($config);
+        }
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             send_json(['error' => 'Method not allowed'], 405);
         }
@@ -118,6 +224,9 @@ if (isset($_GET['action'])) {
             curl_close($ch);
         }
 
+        // Hash the admin passcode using Bcrypt
+        $hashed_passcode = password_hash($admin_passcode, PASSWORD_BCRYPT);
+
         // Save Configuration locally
         $config_data = [
             'github_token' => $token,
@@ -126,12 +235,15 @@ if (isset($_GET['action'])) {
             'company_name' => $company,
             'company_logo_url' => $logo_url,
             'branch' => $branch,
-            'admin_passcode' => $admin_passcode
+            'admin_passcode' => $hashed_passcode
         ];
-        if (file_put_contents(CONFIG_FILE, json_encode($config_data, JSON_PRETTY_PRINT))) {
+        if (save_config_php($config_data)) {
+            if (file_exists(CONFIG_FILE_JSON)) {
+                @unlink(CONFIG_FILE_JSON);
+            }
             send_json(['success' => true]);
         } else {
-            send_json(['error' => 'Unable to write config.json. Please verify directory permissions.'], 500);
+            send_json(['error' => 'Unable to write config.php. Please verify directory permissions.'], 500);
         }
     }
 
@@ -142,6 +254,7 @@ if (isset($_GET['action'])) {
 
     // Update Company Profile API
     if ($action === 'update_company_profile') {
+        require_admin_auth($config);
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             send_json(['error' => 'Method not allowed'], 405);
         }
@@ -156,17 +269,11 @@ if (isset($_GET['action'])) {
             send_json(['error' => 'Company Name is required.'], 400);
         }
 
-        // Load existing config
-        if (file_exists(CONFIG_FILE)) {
-            $config_data = json_decode(file_get_contents(CONFIG_FILE), true);
-        } else {
-            $config_data = [];
-        }
-
+        $config_data = $config;
         $config_data['company_name'] = $company_name;
         $config_data['company_logo_url'] = $company_logo_url;
 
-        if (file_put_contents(CONFIG_FILE, json_encode($config_data, JSON_PRETTY_PRINT))) {
+        if (save_config_php($config_data)) {
             send_json(['success' => true]);
         } else {
             send_json(['error' => 'Failed to save updated company profile.'], 500);
@@ -181,9 +288,36 @@ if (isset($_GET['action'])) {
         $data = json_decode(file_get_contents('php://input'), true);
         $passcode = $data['passcode'] ?? '';
         $correct_passcode = $config['admin_passcode'] ?? 'admin';
-        if ($passcode === $correct_passcode) {
-            send_json(['success' => true]);
+        
+        $is_match = false;
+        if (strpos($correct_passcode, '$2y$') === 0) {
+            $is_match = password_verify($passcode, $correct_passcode);
         } else {
+            $is_match = ($passcode === $correct_passcode);
+        }
+        
+        if ($is_match) {
+            $needs_migration = file_exists(CONFIG_FILE_JSON);
+            $needs_hashing = (strpos($correct_passcode, '$2y$') !== 0);
+            
+            if ($needs_migration || $needs_hashing) {
+                if (!getenv('OPMS_GITHUB_TOKEN')) {
+                    $config_data = $config;
+                    if ($needs_hashing) {
+                        $config_data['admin_passcode'] = password_hash($passcode, PASSWORD_BCRYPT);
+                        $config['admin_passcode'] = $config_data['admin_passcode'];
+                    }
+                    save_config_php($config_data);
+                    if (file_exists(CONFIG_FILE_JSON)) {
+                        @unlink(CONFIG_FILE_JSON);
+                    }
+                }
+            }
+            
+            $token = generate_auth_token($config);
+            send_json(['success' => true, 'token' => $token]);
+        } else {
+            usleep(1500000); // 1.5 seconds delay to mitigate brute force
             send_json(['error' => 'Invalid admin passcode.'], 401);
         }
     }
@@ -272,6 +406,7 @@ if (isset($_GET['action'])) {
 
     // Create or edit a rule
     if ($action === 'save_rule') {
+        require_admin_auth($config);
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             send_json(['error' => 'Method not allowed'], 405);
         }
@@ -376,6 +511,7 @@ if (isset($_GET['action'])) {
 
     // Delete an HR rule
     if ($action === 'delete_rule') {
+        require_admin_auth($config);
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             send_json(['error' => 'Method not allowed'], 405);
         }
@@ -459,6 +595,7 @@ if (isset($_GET['action'])) {
 
     // Create or edit a category (hierarchical)
     if ($action === 'save_category') {
+        require_admin_auth($config);
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             send_json(['error' => 'Method not allowed'], 405);
         }
@@ -565,6 +702,7 @@ if (isset($_GET['action'])) {
 
     // Delete a category
     if ($action === 'delete_category') {
+        require_admin_auth($config);
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             send_json(['error' => 'Method not allowed'], 405);
         }
@@ -667,21 +805,28 @@ if (isset($_GET['action'])) {
 
     // Reset setup configuration
     if ($action === 'reset_config') {
+        require_admin_auth($config);
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             send_json(['error' => 'Method not allowed'], 405);
         }
         if (getenv('OPMS_GITHUB_TOKEN')) {
             send_json(['error' => 'System is configured via environment variables. Please remove environment variables on your server to disconnect.'], 400);
         }
-        if (file_exists(CONFIG_FILE)) {
-            if (unlink(CONFIG_FILE)) {
-                send_json(['success' => true]);
-            } else {
-                send_json(['error' => 'Failed to clear local configuration.'], 500);
+        $errors = [];
+        if (file_exists(CONFIG_FILE_PHP)) {
+            if (!@unlink(CONFIG_FILE_PHP)) {
+                $errors[] = 'Failed to delete config.php';
             }
-        } else {
-            send_json(['success' => true]);
         }
+        if (file_exists(CONFIG_FILE_JSON)) {
+            if (!@unlink(CONFIG_FILE_JSON)) {
+                $errors[] = 'Failed to delete config.json';
+            }
+        }
+        if (!empty($errors)) {
+            send_json(['error' => implode(', ', $errors)], 500);
+        }
+        send_json(['success' => true]);
     }
 
     send_json(['error' => 'Action routing endpoint not recognized.'], 404);
@@ -2343,8 +2488,25 @@ if (isset($_GET['action'])) {
         let commitsCache = [];
         let currentRulesSha = null;
         let selectedCategoryFilter = 'All';
-        let isAdminAuthenticated = false;
+        let isAdminAuthenticated = sessionStorage.getItem('admin_token') ? true : false;
         let activeView = 'rules';
+
+        // Client-side inactivity auto-logout (15 minutes)
+        let inactivityTimer;
+        function resetInactivityTimer() {
+            clearTimeout(inactivityTimer);
+            if (isAdminAuthenticated) {
+                inactivityTimer = setTimeout(() => {
+                    logoutAdmin();
+                    showToast("Logged out due to 15 minutes of inactivity.", "warning");
+                }, 15 * 60 * 1000);
+            }
+        }
+
+        // Event listeners to detect activity and reset timer
+        ['mousemove', 'mousedown', 'keypress', 'touchstart', 'scroll'].forEach(evt => {
+            window.addEventListener(evt, resetInactivityTimer, true);
+        });
 
         // SPA Navigation Router
         function navigateSPA(targetView, event) {
@@ -2406,8 +2568,10 @@ if (isset($_GET['action'])) {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ passcode })
                 });
-                if (res.success) {
+                if (res.success && res.token) {
+                    sessionStorage.setItem('admin_token', res.token);
                     isAdminAuthenticated = true;
+                    resetInactivityTimer();
                     document.getElementById('passcode-modal').style.display = 'none';
                     showToast("Admin access granted.", "success");
                     navigateSPA('admin');
@@ -2420,6 +2584,8 @@ if (isset($_GET['action'])) {
         }
 
         function logoutAdmin() {
+            clearTimeout(inactivityTimer);
+            sessionStorage.removeItem('admin_token');
             isAdminAuthenticated = false;
             showToast("Admin console locked successfully.", "info");
             navigateSPA('rules');
@@ -2466,9 +2632,22 @@ if (isset($_GET['action'])) {
         // HTTP Fetch API wrapper
         async function fetchAPI(url, options = {}) {
             try {
+                const token = sessionStorage.getItem('admin_token');
+                if (token) {
+                    if (!options.headers) {
+                        options.headers = {};
+                    }
+                    options.headers['Authorization'] = 'Bearer ' + token;
+                }
                 const response = await fetch(url, options);
                 const data = await response.json();
                 if (!response.ok) {
+                    if (response.status === 401) {
+                        sessionStorage.removeItem('admin_token');
+                        isAdminAuthenticated = false;
+                        navigateSPA('rules');
+                        showToast("Your session has expired. Please log in again.", "warning");
+                    }
                     throw new Error(data.error || 'Network error occurred.');
                 }
                 return data;
@@ -3937,6 +4116,10 @@ if (isset($_GET['action'])) {
             if (APP_CONFIG.isConfigured) {
                 // Initialize View Router & load rulebook default page
                 document.getElementById('app').style.display = 'flex';
+                
+                if (isAdminAuthenticated) {
+                    resetInactivityTimer();
+                }
                 
                 // Read path or hash to determine the view
                 const path = window.location.pathname.toLowerCase();
