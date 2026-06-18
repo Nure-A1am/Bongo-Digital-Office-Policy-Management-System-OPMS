@@ -1707,7 +1707,7 @@ if (isset($_GET['action'])) {
         .search-box .search-icon {
             position: absolute;
             left: 14px;
-            color: #8c2d19; /* Elegant dark red/sepia matching the seal */
+            color: var(--color-brand); /* Matching brand red */
             font-size: 1rem;
             pointer-events: none;
             transition: color var(--transition-speed);
@@ -1734,13 +1734,13 @@ if (isset($_GET['action'])) {
         }
 
         .search-input:focus {
-            border-color: #801a1a; /* Matching the seal red */
-            box-shadow: 0 0 0 4px rgba(128, 26, 26, 0.12), inset 0 1px 2px rgba(0, 0, 0, 0.05);
+            border-color: var(--color-brand); /* Matching brand red */
+            box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.12), inset 0 1px 2px rgba(0, 0, 0, 0.05);
             background: #ffffff;
         }
 
         .search-input:focus + .search-icon {
-            color: #801a1a;
+            color: var(--color-brand);
         }
 
         /* Search Suggestions Dropdown */
@@ -1758,7 +1758,7 @@ if (isset($_GET['action'])) {
             overflow-y: auto;
             display: none;
             padding: 6px 0;
-            border-top: 3px solid #801a1a;
+            border-top: 3px solid var(--color-brand); /* Matching brand red */
         }
 
         .suggestion-item {
@@ -1776,7 +1776,7 @@ if (isset($_GET['action'])) {
         }
 
         .suggestion-item:hover {
-            background: #fcfaf7;
+            background: var(--color-brand-light); /* Soft brand red background on hover */
         }
 
         .suggestion-title {
@@ -1789,7 +1789,7 @@ if (isset($_GET['action'])) {
         .suggestion-category {
             font-family: var(--font-sans);
             font-size: 0.72rem;
-            color: #8c2d19;
+            color: var(--color-brand); /* Matching brand red */
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.03em;
