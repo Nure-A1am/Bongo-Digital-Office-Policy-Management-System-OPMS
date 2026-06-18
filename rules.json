@@ -2,9 +2,20 @@
     "categories": [
         {
             "id": "cat_6a3418eee1dbf",
-            "name": "\u09e7. \u0995\u09b0\u09cd\u09ae\u0998\u09a3\u09cd\u099f\u09be, \u09b9\u09be\u099c\u09bf\u09b0\u09be \u0993 \u099b\u09c1\u099f\u09bf (Work Hours, Attendance & Leave)",
+            "name": "১. কর্মঘণ্টা, হাজিরা ও ছুটি (Work Hours, Attendance & Leave)",
             "parent_id": null
+        },
+        {
+            "id": "cat_6a341b8f673a6",
+            "name": "১.১. কর্মঘণ্টা ও শিফট (Work Hours & Shifts)",
+            "parent_id": "cat_6a3418eee1dbf"
+        },
+        {
+            "id": "cat_6a341b9e382ea",
+            "name": "১.১.১. অফিস সময় ও শিফট পরিবর্তন (Core Office Hours & Shift Transition)",
+            "parent_id": "cat_6a341b8f673a6"
         }
     ],
-    "policies": []
+    "policies": [],
+    "dummy_test": 1781800138
 }
