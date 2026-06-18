@@ -1727,12 +1727,52 @@ if (isset($_GET['action'])) {
             display: flex;
             align-items: center;
             gap: 8px;
-            opacity: 0;
+            opacity: 1; /* Always visible for instant discoverability */
             transition: opacity var(--transition-speed);
         }
 
-        .category-node-content:hover .category-node-actions {
-            opacity: 1;
+        /* Action pill buttons for category tree */
+        .btn-action-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 10px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            border-radius: 6px;
+            border: 1px solid transparent;
+            cursor: pointer;
+            transition: all var(--transition-speed);
+        }
+
+        .btn-action-blue {
+            background: #eff6ff;
+            color: #1e40af;
+            border-color: #bfdbfe;
+        }
+        .btn-action-blue:hover {
+            background: #dbeafe;
+            transform: translateY(-1px);
+        }
+
+        .btn-action-amber {
+            background: #fffbeb;
+            color: #92400e;
+            border-color: #fde68a;
+        }
+        .btn-action-amber:hover {
+            background: #fef3c7;
+            transform: translateY(-1px);
+        }
+
+        .btn-action-red {
+            background: #fef2f2;
+            color: #991b1b;
+            border-color: #fca5a5;
+        }
+        .btn-action-red:hover {
+            background: #fee2e2;
+            transform: translateY(-1px);
         }
 
         .category-tree-children {
@@ -3144,15 +3184,15 @@ if (isset($_GET['action'])) {
                             </div>
                             <div class="category-node-actions">
                                 ${canAddChild ? `
-                                    <button class="btn-icon btn-icon-primary" style="padding: 2px 6px; font-size: 0.75rem;" title="সাব-ক্যাটাগরি যোগ করুন" onclick="openAddCategoryModal('${node.id}')">
-                                        <i class="fa-solid fa-plus"></i>
+                                    <button class="btn-action-pill btn-action-blue" onclick="openAddCategoryModal('${node.id}')">
+                                        <i class="fa-solid fa-plus"></i> সাব-ক্যাটাগরি
                                     </button>
                                 ` : ''}
-                                <button class="btn-icon btn-icon-primary" style="padding: 2px 6px; font-size: 0.75rem;" title="নাম পরিবর্তন করুন" onclick="openEditCategoryModal('${node.id}')">
-                                    <i class="fa-solid fa-pen-to-square"></i>
+                                <button class="btn-action-pill btn-action-amber" onclick="openEditCategoryModal('${node.id}')">
+                                    <i class="fa-solid fa-pen-to-square"></i> এডিট
                                 </button>
-                                <button class="btn-icon btn-icon-danger" style="padding: 2px 6px; font-size: 0.75rem;" title="মুছে ফেলুন" onclick="triggerDeleteCategory('${node.id}')">
-                                    <i class="fa-solid fa-trash-can"></i>
+                                <button class="btn-action-pill btn-action-red" onclick="triggerDeleteCategory('${node.id}')">
+                                    <i class="fa-solid fa-trash-can"></i> ডিলিট
                                 </button>
                             </div>
                         </div>
