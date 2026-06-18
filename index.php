@@ -1250,6 +1250,137 @@ if (isset($_GET['action'])) {
             margin-bottom: 6px;
         }
 
+        /* Toolbar and Search Container */
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+
+        .search-wrapper {
+            position: relative;
+            flex: 1;
+            max-width: 480px;
+        }
+
+        .search-box {
+            position: relative;
+            display: flex;
+            align-items: center;
+            width: 100%;
+        }
+
+        .search-box .search-icon {
+            position: absolute;
+            left: 14px;
+            color: #8c2d19; /* Elegant dark red/sepia matching the seal */
+            font-size: 1rem;
+            pointer-events: none;
+            transition: color var(--transition-speed);
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 12px 16px 12px 42px;
+            background: #ffffff;
+            border: 2px solid #cbd5e1;
+            border-radius: 8px;
+            color: #1e293b;
+            font-family: var(--font-paper);
+            font-size: 0.95rem;
+            outline: none;
+            transition: all var(--transition-speed);
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+
+        .search-input::placeholder {
+            color: #94a3b8;
+            font-family: var(--font-sans);
+            font-size: 0.9rem;
+        }
+
+        .search-input:focus {
+            border-color: #801a1a; /* Matching the seal red */
+            box-shadow: 0 0 0 4px rgba(128, 26, 26, 0.12), inset 0 1px 2px rgba(0, 0, 0, 0.05);
+            background: #ffffff;
+        }
+
+        .search-input:focus + .search-icon {
+            color: #801a1a;
+        }
+
+        /* Search Suggestions Dropdown */
+        .search-suggestions-dropdown {
+            position: absolute;
+            top: calc(100% + 8px);
+            left: 0;
+            right: 0;
+            background: #ffffff;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+            z-index: 200;
+            max-height: 280px;
+            overflow-y: auto;
+            display: none;
+            padding: 6px 0;
+            border-top: 3px solid #801a1a;
+        }
+
+        .suggestion-item {
+            padding: 10px 16px;
+            cursor: pointer;
+            transition: background var(--transition-speed);
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .suggestion-item:last-child {
+            border-bottom: none;
+        }
+
+        .suggestion-item:hover {
+            background: #fcfaf7;
+        }
+
+        .suggestion-title {
+            font-family: var(--font-paper);
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: #2d1e18;
+        }
+
+        .suggestion-category {
+            font-family: var(--font-sans);
+            font-size: 0.72rem;
+            color: #8c2d19;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        .suggestion-no-results {
+            padding: 16px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            font-family: var(--font-sans);
+        }
+
+        /* Rule highlight flash animation */
+        @keyframes ruleHighlight {
+            0% { background-color: rgba(188, 170, 164, 0.3); border-left-color: #801a1a; }
+            100% { background-color: transparent; border-left-color: #cbd5e1; }
+        }
+        .highlighted-rule {
+            animation: ruleHighlight 2.5s ease-out;
+        }
+
         /* ---------------------------------
            Responsive adaptations
         ------------------------------------ */
@@ -1420,12 +1551,12 @@ if (isset($_GET['action'])) {
             <ul class="sidebar-menu">
                 <li>
                     <a href="#rules" class="menu-link active" onclick="navigateSPA('rules', event)">
-                        <i class="fa-solid fa-book"></i> Rulebook
+                        <i class="fa-solid fa-book"></i> নিয়মাবলী নির্দেশিকা
                     </a>
                 </li>
                 <li>
                     <a href="#timeline" class="menu-link" onclick="navigateSPA('timeline', event)">
-                        <i class="fa-solid fa-receipt"></i> Change Ledger
+                        <i class="fa-solid fa-receipt"></i> সংশোধনী রেজিস্টার
                     </a>
                 </li>
             </ul>
@@ -1469,9 +1600,12 @@ if (isset($_GET['action'])) {
                 </div>
 
                 <div class="toolbar">
-                    <div class="search-box">
-                        <i class="fa-solid fa-magnifying-glass search-icon"></i>
-                        <input class="search-input" type="text" id="employee-search" oninput="filterEmployeeRules()" placeholder="Search policies...">
+                    <div class="search-wrapper">
+                        <div class="search-box">
+                            <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                            <input class="search-input" type="text" id="employee-search" oninput="handleSearchInput(event)" placeholder="নীতিমালা খুঁজুন...">
+                        </div>
+                        <div id="search-suggestions" class="search-suggestions-dropdown"></div>
                     </div>
                     <div class="category-filters" id="employee-category-filters">
                         <!-- Dynamic list of filters will be generated here -->
@@ -2090,7 +2224,7 @@ if (isset($_GET['action'])) {
                     });
 
                     html += `
-                        <div style="margin-bottom: 30px; padding-left: 14px; border-left: 3px solid #cbd5e1;">
+                        <div id="rule-card-${rule.id}" style="margin-bottom: 30px; padding-left: 14px; border-left: 3px solid #cbd5e1; transition: all 0.4s ease; scroll-margin-top: 60px;">
                             <h4 style="font-family: var(--font-paper); font-weight: 600; font-size: 1.15rem; color: var(--text-heading); margin-bottom: 8px; display: flex; align-items: baseline; gap: 8px;">
                                 <span style="font-family: var(--font-mono); color: var(--color-primary);">§ ${sectionNum}</span>
                                 <a onclick="openDetailsModal('${rule.id}')" style="color: inherit; text-decoration: none; cursor: pointer;">
@@ -2134,7 +2268,7 @@ if (isset($_GET['action'])) {
             // Add "All" selector
             const allBtn = document.createElement('span');
             allBtn.className = `filter-tag ${selectedCategoryFilter === 'All' ? 'active' : ''}`;
-            allBtn.innerText = 'All Policies';
+            allBtn.innerText = 'সকল নীতিমালা';
             allBtn.onclick = () => {
                 selectedCategoryFilter = 'All';
                 document.querySelectorAll('.filter-tag').forEach(b => b.classList.remove('active'));
@@ -2161,6 +2295,88 @@ if (isset($_GET['action'])) {
         function filterEmployeeRules() {
             renderEmployeeRules();
         }
+
+        // Live Search input and suggestions handling
+        function handleSearchInput(event) {
+            const input = event.target;
+            const val = input.value.toLowerCase().trim();
+            const suggestionsContainer = document.getElementById('search-suggestions');
+
+            // Update main rule list instantly
+            filterEmployeeRules();
+
+            if (!val) {
+                suggestionsContainer.innerHTML = '';
+                suggestionsContainer.style.display = 'none';
+                return;
+            }
+
+            // Find matching policies
+            const matches = rulesCache.filter(rule => {
+                return rule.title.toLowerCase().includes(val) || 
+                       rule.category.toLowerCase().includes(val) ||
+                       rule.description.toLowerCase().includes(val);
+            }).slice(0, 5); // Limit suggestions to 5 items
+
+            if (matches.length === 0) {
+                suggestionsContainer.innerHTML = `<div class="suggestion-no-results">কোনো ফলাফল পাওয়া যায়নি</div>`;
+                suggestionsContainer.style.display = 'block';
+                return;
+            }
+
+            let html = '';
+            matches.forEach(rule => {
+                html += `
+                    <div class="suggestion-item" onclick="selectSearchSuggestion('${rule.id}')">
+                        <span class="suggestion-category">${escapeHtml(rule.category)}</span>
+                        <span class="suggestion-title">${escapeHtml(rule.title)}</span>
+                    </div>
+                `;
+            });
+
+            suggestionsContainer.innerHTML = html;
+            suggestionsContainer.style.display = 'block';
+        }
+
+        function selectSearchSuggestion(ruleId) {
+            const rule = rulesCache.find(r => r.id === ruleId);
+            if (!rule) return;
+
+            // Set input value
+            const searchInput = document.getElementById('employee-search');
+            searchInput.value = rule.title;
+
+            // Hide suggestions
+            const suggestionsContainer = document.getElementById('search-suggestions');
+            suggestionsContainer.innerHTML = '';
+            suggestionsContainer.style.display = 'none';
+
+            // Filter rules list
+            filterEmployeeRules();
+
+            // Scroll to the card
+            setTimeout(() => {
+                const card = document.getElementById(`rule-card-${ruleId}`);
+                if (card) {
+                    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    
+                    // Trigger highlight flash
+                    card.classList.add('highlighted-rule');
+                    setTimeout(() => {
+                        card.classList.remove('highlighted-rule');
+                    }, 2500);
+                }
+            }, 100);
+        }
+
+        // Close search suggestions when clicking outside
+        document.addEventListener('click', (e) => {
+            const suggestionsContainer = document.getElementById('search-suggestions');
+            const searchWrapper = document.querySelector('.search-wrapper');
+            if (suggestionsContainer && searchWrapper && !searchWrapper.contains(e.target)) {
+                suggestionsContainer.style.display = 'none';
+            }
+        });
 
         async function updateLastAuditDate() {
             try {
@@ -2911,6 +3127,16 @@ if (isset($_GET['action'])) {
                 }
                 
                 navigateSPA(view);
+
+                // Add focus listener for search suggestions
+                const searchInput = document.getElementById('employee-search');
+                if (searchInput) {
+                    searchInput.addEventListener('focus', (e) => {
+                        if (e.target.value.trim()) {
+                            document.getElementById('search-suggestions').style.display = 'block';
+                        }
+                    });
+                }
             }
         });
 
