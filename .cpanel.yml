@@ -1,0 +1,8 @@
+---
+deployment:
+  tasks:
+    - export DEPLOYPATH=/home/bongodigi/public_html/office-policy/
+    - /bin/cp -R .htaccess $DEPLOYPATH
+    - /bin/cp index.php $DEPLOYPATH
+    - /bin/cp config.php $DEPLOYPATH
+    - /bin/cp rules.json $DEPLOYPATH
