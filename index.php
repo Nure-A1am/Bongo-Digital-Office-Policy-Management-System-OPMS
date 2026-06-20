@@ -930,7 +930,8 @@ if (isset($_GET['action'])) {
         $result = call_github_api('GET', "/commits?path=rules.json&sha={$branch}");
         if ($result['status'] === 200) {
             send_json($result['body']);
-        } elseif ($result['status'] === 404) {
+        } elseif ($result['status'] === 404 || $result['status'] === 409) {
+            // 404 = repo/file not found, 409 = repo is empty (no commits yet)
             send_json([]);
         } else {
             send_json(['error' => 'Unable to read git ledger from GitHub.', 'details' => $result['body']], $result['status']);
