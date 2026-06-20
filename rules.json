@@ -2,17 +2,17 @@
     "categories": [
         {
             "id": "cat_6a3418eee1dbf",
-            "name": "১. কর্মঘণ্টা, হাজিরা ও ছুটি (Work Hours, Attendance & Leave)",
+            "name": "কর্মঘণ্টা, হাজিরা ও ছুটি (Work Hours, Attendance & Leave)",
             "parent_id": null
         },
         {
             "id": "cat_6a341b8f673a6",
-            "name": "১.১. কর্মঘণ্টা ও শিফট (Work Hours & Shifts)",
+            "name": "কর্মঘণ্টা ও শিফট (Work Hours & Shifts)",
             "parent_id": "cat_6a3418eee1dbf"
         },
         {
             "id": "cat_6a341b9e382ea",
-            "name": "১.১.১. অফিস সময় ও শিফট পরিবর্তন (Core Office Hours & Shift Transition)",
+            "name": "অফিস সময় ও শিফট পরিবর্তন (Core Office Hours & Shift Transition)",
             "parent_id": "cat_6a341b8f673a6"
         }
     ],
