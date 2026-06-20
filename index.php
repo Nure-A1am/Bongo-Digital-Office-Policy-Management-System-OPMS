@@ -37,6 +37,57 @@ function save_ip_lockout($ip, $data) {
     file_put_contents($file, json_encode($data), LOCK_EX);
 }
 
+function push_rules_backup($db_json_string, $config) {
+    $backup_owner  = $config['backup_repo_owner'] ?? '';
+    $backup_repo   = $config['backup_repo_name'] ?? '';
+    $backup_branch = $config['backup_branch'] ?? 'main';
+    $backup_token  = ($config['backup_token'] ?? '') ?: ($config['github_token'] ?? '');
+
+    if (!$backup_owner || !$backup_repo || !$backup_token) return;
+
+    $url = "https://api.github.com/repos/{$backup_owner}/{$backup_repo}/contents/rules.json?ref=" . urlencode($backup_branch);
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        "Authorization: Bearer {$backup_token}",
+        "User-Agent: Immutable-HR-App",
+        "Accept: application/vnd.github.v3+json"
+    ]);
+    $response = curl_exec($ch);
+    $status   = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    $backup_sha = null;
+    if ($status === 200) {
+        $existing   = json_decode($response, true);
+        $backup_sha = $existing['sha'] ?? null;
+    }
+
+    $body = [
+        'message' => '[HR Backup] rules.json – ' . date('Y-m-d H:i:s T'),
+        'content' => base64_encode($db_json_string),
+        'branch'  => $backup_branch
+    ];
+    if ($backup_sha) $body['sha'] = $backup_sha;
+
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, "https://api.github.com/repos/{$backup_owner}/{$backup_repo}/contents/rules.json");
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($body));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        "Authorization: Bearer {$backup_token}",
+        "User-Agent: Immutable-HR-App",
+        "Content-Type: application/json",
+        "Accept: application/vnd.github.v3+json"
+    ]);
+    curl_exec($ch);
+    curl_close($ch);
+}
+
 // Helper function to send JSON API response
 function send_json($data, $status = 200) {
     header('Content-Type: application/json');
@@ -180,13 +231,17 @@ if (isset($_GET['action'])) {
             send_json(['error' => 'Method not allowed'], 405);
         }
         $data = json_decode(file_get_contents('php://input'), true);
-        $token = $data['github_token'] ?? '';
-        $owner = $data['repo_owner'] ?? '';
-        $repo = $data['repo_name'] ?? '';
-        $company = $data['company_name'] ?? '';
-        $logo_url = $data['company_logo_url'] ?? '';
-        $branch = $data['branch'] ?? 'main';
+        $token          = $data['github_token'] ?? '';
+        $owner          = $data['repo_owner'] ?? '';
+        $repo           = $data['repo_name'] ?? '';
+        $company        = $data['company_name'] ?? '';
+        $logo_url       = $data['company_logo_url'] ?? '';
+        $branch         = $data['branch'] ?? 'main';
         $admin_passcode = $data['admin_passcode'] ?? 'admin';
+        $backup_owner   = $data['backup_repo_owner'] ?? '';
+        $backup_repo    = $data['backup_repo_name'] ?? '';
+        $backup_branch  = $data['backup_branch'] ?? 'main';
+        $backup_token   = $data['backup_token'] ?? '';
 
         if (!$token || !$owner || !$repo || !$company) {
             send_json(['error' => 'All fields (PAT, Owner, Repo, Company) are required.'], 400);
@@ -259,13 +314,17 @@ if (isset($_GET['action'])) {
 
         // Save Configuration locally
         $config_data = [
-            'github_token' => $token,
-            'repo_owner' => $owner,
-            'repo_name' => $repo,
-            'company_name' => $company,
-            'company_logo_url' => $logo_url,
-            'branch' => $branch,
-            'admin_passcode' => $hashed_passcode
+            'github_token'      => $token,
+            'repo_owner'        => $owner,
+            'repo_name'         => $repo,
+            'company_name'      => $company,
+            'company_logo_url'  => $logo_url,
+            'branch'            => $branch,
+            'admin_passcode'    => $hashed_passcode,
+            'backup_repo_owner' => $backup_owner,
+            'backup_repo_name'  => $backup_repo,
+            'backup_branch'     => $backup_branch,
+            'backup_token'      => $backup_token,
         ];
         if (save_config_php($config_data)) {
             if (file_exists(CONFIG_FILE_JSON)) {
@@ -559,9 +618,10 @@ if (isset($_GET['action'])) {
         }
 
         // Commit updated rules.json to GitHub repository
+        $db_json = json_encode($db, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $commit_payload = [
             'message' => $commit_msg,
-            'content' => base64_encode(json_encode($db, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)),
+            'content' => base64_encode($db_json),
             'branch' => $branch
         ];
         if ($sha) {
@@ -570,6 +630,7 @@ if (isset($_GET['action'])) {
 
         $push_res = call_github_api('PUT', "/contents/rules.json", $commit_payload);
         if ($push_res['status'] === 200 || $push_res['status'] === 201) {
+            push_rules_backup($db_json, $config);
             send_json(['success' => true, 'rules' => $db['policies'], 'categories' => $db['categories']]);
         } else {
             send_json(['error' => 'Failed to commit policies update to GitHub.', 'details' => $push_res['body']], $push_res['status']);
@@ -645,15 +706,17 @@ if (isset($_GET['action'])) {
         $db['policies'] = $filtered_policies;
 
         $commit_msg = "HR Policy Update: Removed '{$deleted_title}' policy";
+        $db_json = json_encode($db, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $commit_payload = [
             'message' => $commit_msg,
-            'content' => base64_encode(json_encode($db, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)),
+            'content' => base64_encode($db_json),
             'sha' => $sha,
             'branch' => $branch
         ];
 
         $push_res = call_github_api('PUT', "/contents/rules.json", $commit_payload);
         if ($push_res['status'] === 200 || $push_res['status'] === 201) {
+            push_rules_backup($db_json, $config);
             send_json(['success' => true, 'rules' => $filtered_policies, 'categories' => $db['categories']]);
         } else {
             send_json(['error' => 'Failed to remove policy rule from GitHub.', 'details' => $push_res['body']], $push_res['status']);
@@ -750,9 +813,10 @@ if (isset($_GET['action'])) {
         }
 
         // Commit updated rules.json to GitHub repository
+        $db_json = json_encode($db, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $commit_payload = [
             'message' => $commit_msg,
-            'content' => base64_encode(json_encode($db, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)),
+            'content' => base64_encode($db_json),
             'branch' => $branch
         ];
         if ($sha) {
@@ -761,6 +825,7 @@ if (isset($_GET['action'])) {
 
         $push_res = call_github_api('PUT', "/contents/rules.json", $commit_payload);
         if ($push_res['status'] === 200 || $push_res['status'] === 201) {
+            push_rules_backup($db_json, $config);
             send_json(['success' => true, 'rules' => $db['policies'], 'categories' => $db['categories']]);
         } else {
             send_json(['error' => 'Failed to commit category updates to GitHub.', 'details' => $push_res['body']], $push_res['status']);
@@ -843,15 +908,17 @@ if (isset($_GET['action'])) {
         $db['categories'] = $filtered_categories;
 
         $commit_msg = "HR Policy Update: Deleted category '{$deleted_name}'";
+        $db_json = json_encode($db, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $commit_payload = [
             'message' => $commit_msg,
-            'content' => base64_encode(json_encode($db, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)),
+            'content' => base64_encode($db_json),
             'sha' => $sha,
             'branch' => $branch
         ];
 
         $push_res = call_github_api('PUT', "/contents/rules.json", $commit_payload);
         if ($push_res['status'] === 200 || $push_res['status'] === 201) {
+            push_rules_backup($db_json, $config);
             send_json(['success' => true, 'rules' => $db['policies'], 'categories' => $db['categories']]);
         } else {
             send_json(['error' => 'Failed to remove category from GitHub.', 'details' => $push_res['body']], $push_res['status']);
@@ -2443,6 +2510,43 @@ if (isset($_GET['action'])) {
                     </div>
                 </div>
 
+                <div style="margin: 24px 0 16px; padding: 14px 16px; background: rgba(99,102,241,0.08); border-left: 3px solid #6366f1; border-radius: 6px;">
+                    <p style="margin:0 0 4px; font-weight:600; font-size:0.85rem;"><i class="fa-solid fa-shield-halved"></i> Backup Repository (Optional)</p>
+                    <p style="margin:0; font-size:0.8rem; color: var(--text-muted);">প্রতিটি rule update এর পর rules.json এর copy আপনার private repo-তে automatically যাবে। Company repo delete হলেও আপনার কাছে evidence থাকবে।</p>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="setup-backup-owner">Backup Repo Owner (আপনার GitHub username)</label>
+                    <div class="form-control-wrapper">
+                        <input class="form-control" type="text" id="setup-backup-owner" placeholder="e.g. your_personal_username">
+                        <i class="fa-solid fa-user-shield form-icon"></i>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="setup-backup-repo">Backup Repository Name</label>
+                    <div class="form-control-wrapper">
+                        <input class="form-control" type="text" id="setup-backup-repo" placeholder="e.g. hr-rules-private-backup">
+                        <i class="fa-solid fa-box-archive form-icon"></i>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="setup-backup-branch">Backup Branch</label>
+                    <div class="form-control-wrapper">
+                        <input class="form-control" type="text" id="setup-backup-branch" value="main" placeholder="main">
+                        <i class="fa-solid fa-code-branch form-icon"></i>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="setup-backup-token">Backup Repo PAT Token (আলাদা token থাকলে দিন, না হলে খালি রাখুন)</label>
+                    <div class="form-control-wrapper">
+                        <input class="form-control" type="password" id="setup-backup-token" placeholder="Same as above token if left blank">
+                        <i class="fa-solid fa-key form-icon"></i>
+                    </div>
+                </div>
+
                 <button class="btn btn-primary" type="submit">
                     <i class="fa-solid fa-circle-nodes"></i> Authenticate & Initialize
                 </button>
@@ -3182,13 +3286,17 @@ if (isset($_GET['action'])) {
         async function handleSetupSubmit(event) {
             event.preventDefault();
             
-            const company = document.getElementById('setup-company').value.trim();
-            const logo = document.getElementById('setup-logo').value.trim();
-            const token = document.getElementById('setup-token').value.trim();
-            const owner = document.getElementById('setup-owner').value.trim();
-            const repo = document.getElementById('setup-repo').value.trim();
-            const branch = document.getElementById('setup-branch').value.trim() || 'main';
-            const passcode = document.getElementById('setup-passcode').value.trim() || 'admin';
+            const company      = document.getElementById('setup-company').value.trim();
+            const logo         = document.getElementById('setup-logo').value.trim();
+            const token        = document.getElementById('setup-token').value.trim();
+            const owner        = document.getElementById('setup-owner').value.trim();
+            const repo         = document.getElementById('setup-repo').value.trim();
+            const branch       = document.getElementById('setup-branch').value.trim() || 'main';
+            const passcode     = document.getElementById('setup-passcode').value.trim() || 'admin';
+            const backupOwner  = document.getElementById('setup-backup-owner').value.trim();
+            const backupRepo   = document.getElementById('setup-backup-repo').value.trim();
+            const backupBranch = document.getElementById('setup-backup-branch').value.trim() || 'main';
+            const backupToken  = document.getElementById('setup-backup-token').value.trim();
 
             toggleLoading(true, "Authenticating GitHub Credentials...");
 
@@ -3197,13 +3305,17 @@ if (isset($_GET['action'])) {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        github_token: token,
-                        repo_owner: owner,
-                        repo_name: repo,
-                        company_name: company,
-                        company_logo_url: logo,
-                        branch: branch,
-                        admin_passcode: passcode
+                        github_token:      token,
+                        repo_owner:        owner,
+                        repo_name:         repo,
+                        company_name:      company,
+                        company_logo_url:  logo,
+                        branch:            branch,
+                        admin_passcode:    passcode,
+                        backup_repo_owner: backupOwner,
+                        backup_repo_name:  backupRepo,
+                        backup_branch:     backupBranch,
+                        backup_token:      backupToken
                     })
                 });
 
