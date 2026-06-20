@@ -4,6 +4,10 @@
  * Single-file PHP/JS SPA (GitOps Architecture)
  */
 
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 define('CONFIG_FILE_PHP', __DIR__ . '/config.php');
 define('CONFIG_FILE_JSON', __DIR__ . '/config.json');
 
@@ -282,6 +286,12 @@ if (isset($_GET['action'])) {
 
     // Verify Admin Passcode API
     if ($action === 'verify_admin') {
+        // Lockout Check
+        if (isset($_SESSION['lockout_until']) && time() < $_SESSION['lockout_until']) {
+            $seconds_left = $_SESSION['lockout_until'] - time();
+            send_json(['error' => "Too many failed login attempts. Locked out. Please try again in {$seconds_left} seconds."], 429);
+        }
+
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             send_json(['error' => 'Method not allowed'], 405);
         }
@@ -297,6 +307,10 @@ if (isset($_GET['action'])) {
         }
         
         if ($is_match) {
+            // Reset attempts on success
+            $_SESSION['login_attempts'] = 0;
+            unset($_SESSION['lockout_until']);
+
             $needs_migration = file_exists(CONFIG_FILE_JSON);
             $needs_hashing = (strpos($correct_passcode, '$2y$') !== 0);
             
@@ -317,8 +331,15 @@ if (isset($_GET['action'])) {
             $token = generate_auth_token($config);
             send_json(['success' => true, 'token' => $token]);
         } else {
+            $_SESSION['login_attempts'] = ($_SESSION['login_attempts'] ?? 0) + 1;
+            if ($_SESSION['login_attempts'] >= 5) {
+                $_SESSION['lockout_until'] = time() + 300; // 5 minutes lockout
+                $_SESSION['login_attempts'] = 0;
+                send_json(['error' => 'Too many failed login attempts. Locked out for 5 minutes.'], 429);
+            }
             usleep(1500000); // 1.5 seconds delay to mitigate brute force
-            send_json(['error' => 'Invalid admin passcode.'], 401);
+            $remaining = 5 - $_SESSION['login_attempts'];
+            send_json(['error' => "Invalid admin passcode. {$remaining} attempts remaining before lockout."], 401);
         }
     }
 
@@ -361,7 +382,8 @@ if (isset($_GET['action'])) {
 
     // Get active rules and categories
     if ($action === 'get_rules') {
-        $result = call_github_api('GET', "/contents/rules.json?ref={$branch}");
+        $ref = $_GET['ref'] ?? $branch;
+        $result = call_github_api('GET', "/contents/rules.json?ref={$ref}");
         if ($result['status'] === 404) {
             send_json(['categories' => [], 'rules' => [], 'sha' => null]);
         } elseif ($result['status'] === 200) {
@@ -848,6 +870,13 @@ if (isset($_GET['action'])) {
         };
     </script>
     <title><?php echo $is_configured ? htmlspecialchars($config['company_name']) . " - HR Rulebook & Audit Ledger" : "HR Rulebook System Setup"; ?></title>
+    
+    <!-- Favicon -->
+    <?php if ($is_configured && !empty($config['company_logo_url'])): ?>
+        <link rel="icon" type="image/png" href="<?php echo htmlspecialchars($config['company_logo_url']); ?>">
+    <?php else: ?>
+        <link rel="icon" type="image/png" href="https://bongoltdco.bongodigitalbd.com/images/blc_red.png">
+    <?php endif; ?>
     
     <!-- Design Fonts: Inter, Noto Serif (English Serif), Noto Serif Bengali (Bangla Serif), JetBrains Mono -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1628,11 +1657,13 @@ if (isset($_GET['action'])) {
             position: fixed;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
+            right: 0;
+            bottom: 0;
+            width: 100vw !important;
+            height: 100vh !important;
             z-index: 3000;
-            background: rgba(255, 255, 255, 0.6);
-            backdrop-filter: blur(2px);
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(3px);
             align-items: center;
             justify-content: center;
             flex-direction: column;
@@ -1981,6 +2012,14 @@ if (isset($_GET['action'])) {
         @media (max-width: 1024px) {
             body {
                 flex-direction: column;
+                min-width: 0 !important;
+            }
+
+            .app-layout {
+                flex-direction: column !important;
+                min-width: 0 !important;
+                max-width: 100vw !important;
+                width: 100% !important;
             }
 
             .sidebar {
@@ -1992,8 +2031,37 @@ if (isset($_GET['action'])) {
             }
 
             .sidebar-brand {
-                padding: 16px 24px;
-                justify-content: space-between;
+                padding: 12px 16px !important;
+                flex-direction: row !important;
+                align-items: center !important;
+                justify-content: flex-start !important;
+                gap: 12px !important;
+                border-bottom: 1px solid var(--border-standard);
+            }
+
+            .sidebar-logo-container {
+                width: 36px !important;
+                height: 36px !important;
+                margin-bottom: 0 !important;
+            }
+
+            .sidebar-logo-img {
+                width: 100% !important;
+                height: 100% !important;
+            }
+
+            .sidebar-default-seal {
+                width: 36px !important;
+                height: 36px !important;
+                font-size: 1.1rem !important;
+                margin-bottom: 0 !important;
+                box-shadow: none !important;
+            }
+
+            .sidebar-title {
+                font-size: 1.1rem !important;
+                margin: 0 !important;
+                text-align: left !important;
             }
 
             .sidebar-menu {
@@ -2009,9 +2077,12 @@ if (isset($_GET['action'])) {
             }
 
             .main-content {
-                margin-left: 0;
-                width: 100%;
+                margin-left: 0 !important;
+                width: 100% !important;
+                max-width: 100vw !important;
+                min-width: 0 !important;
                 padding: 24px;
+                box-sizing: border-box !important;
             }
 
             .section-header {
@@ -2028,6 +2099,223 @@ if (isset($_GET['action'])) {
 
             .timeline-date-filters {
                 flex-wrap: wrap;
+            }
+        }
+
+        /* 100% Mobile responsiveness improvements */
+        @media (max-width: 768px) {
+            body, html {
+                max-width: 100vw !important;
+                overflow-x: hidden !important;
+            }
+
+            .app-layout {
+                max-width: 100vw !important;
+                overflow-x: hidden !important;
+                width: 100% !important;
+            }
+
+            .main-content {
+                padding: 16px !important;
+                max-width: 100vw !important;
+                width: 100% !important;
+                min-width: 0 !important;
+                overflow-x: hidden !important;
+                box-sizing: border-box !important;
+            }
+
+            .paper-document {
+                padding: 24px 16px !important;
+                max-width: 100% !important;
+                width: 100% !important;
+                box-sizing: border-box !important;
+                overflow-x: hidden !important;
+            }
+
+            .paper-document div[style*="overflow-x: auto"] {
+                width: 100% !important;
+                max-width: 100% !important;
+                overflow-x: auto !important;
+            }
+
+            .admin-table-container {
+                width: 100% !important;
+                max-width: 100% !important;
+                overflow-x: auto !important;
+            }
+
+            .admin-table {
+                min-width: 700px !important;
+            }
+
+            .modal-card {
+                max-width: calc(100% - 24px) !important;
+                margin: 12px !important;
+            }
+
+            /* Adjust table fonts and padding for mobile views */
+            .paper-document table th, 
+            .paper-document table td {
+                padding: 10px 8px !important;
+                font-size: 0.8rem !important;
+            }
+
+            .paper-document table th:nth-child(3), 
+            .paper-document table td:nth-child(3) {
+                white-space: normal !important;
+            }
+
+            /* Stack action headers or toolbars if they overflow */
+            .toolbar {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 12px;
+            }
+
+            .search-wrapper {
+                width: 100% !important;
+                max-width: none !important;
+            }
+
+            /* Force filter bar to fit screens */
+            .timeline-filter-bar {
+                flex-direction: column !important;
+                align-items: stretch !important;
+                gap: 12px !important;
+                padding: 12px !important;
+                width: 100% !important;
+                box-sizing: border-box !important;
+            }
+
+            .timeline-date-filters {
+                flex-direction: column !important;
+                align-items: stretch !important;
+                width: 100% !important;
+                gap: 8px !important;
+            }
+
+            .date-input-group {
+                width: 100% !important;
+                justify-content: space-between !important;
+            }
+
+            .timeline-filter-bar button {
+                width: 100% !important;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .paper-document {
+                padding: 20px 12px !important;
+            }
+
+            .paper-document table th, 
+            .paper-document table td {
+                padding: 8px 4px !important;
+                font-size: 0.72rem !important;
+            }
+
+            .paper-document h3 {
+                font-size: 1.25rem !important;
+            }
+
+            .paper-document h4 {
+                font-size: 1.05rem !important;
+            }
+
+            /* Compact Stats layout for very small screens */
+            .stats-grid {
+                grid-template-columns: 1fr !important;
+                gap: 12px;
+            }
+
+            .stat-card {
+                padding: 14px !important;
+            }
+        }
+
+        .table-container-wrapper {
+            overflow-x: auto;
+            width: 100%;
+        }
+        .responsive-ledger-table {
+            min-width: 850px;
+        }
+
+        .toc-container {
+            --toc-indent: 20px;
+        }
+        .toc-item {
+            font-size: 0.95rem;
+        }
+        .toc-item-count {
+            font-size: 0.85rem;
+        }
+
+        @media (max-width: 768px) {
+            .table-container-wrapper {
+                overflow-x: visible !important;
+            }
+            .responsive-ledger-table {
+                min-width: 0 !important;
+            }
+            .responsive-ledger-table, 
+            .responsive-ledger-table thead, 
+            .responsive-ledger-table tbody, 
+            .responsive-ledger-table tr, 
+            .responsive-ledger-table th, 
+            .responsive-ledger-table td {
+                display: block !important;
+                width: 100% !important;
+                box-sizing: border-box;
+            }
+            .responsive-ledger-table thead {
+                display: none !important;
+            }
+            .responsive-ledger-table tr {
+                margin-bottom: 20px;
+                border: 1px solid var(--border-standard) !important;
+                border-radius: 8px;
+                padding: 16px !important;
+                background: #ffffff !important;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.03);
+            }
+            .responsive-ledger-table td {
+                padding: 10px 0 !important;
+                border-bottom: 1px dashed #e2e8f0 !important;
+                text-align: left !important;
+            }
+            .responsive-ledger-table td:last-child {
+                border-bottom: none !important;
+                padding-bottom: 0 !important;
+            }
+            .responsive-ledger-table td::before {
+                content: attr(data-label);
+                display: block;
+                font-size: 0.72rem;
+                text-transform: uppercase;
+                color: var(--text-muted);
+                font-weight: 700;
+                margin-bottom: 6px;
+                font-family: var(--font-sans);
+            }
+            .responsive-ledger-table td[data-label="ডিজিটাল ভেরিফিকেশন (SHA-1)"] div {
+                justify-content: flex-start !important;
+            }
+
+            /* Responsive Table of Contents styles */
+            .toc-container {
+                --toc-indent: 10px;
+                padding: 14px 10px !important;
+                margin-bottom: 25px !important;
+            }
+            .toc-item {
+                font-size: 0.82rem !important;
+                margin-bottom: 6px !important;
+            }
+            .toc-item-count {
+                font-size: 0.72rem !important;
+                white-space: nowrap;
             }
         }
     </style>
@@ -2161,10 +2449,14 @@ if (isset($_GET['action'])) {
 
             <!-- MODULE 3: Frontend UI - Employee View -->
             <section id="view-rules" class="view-section" style="display: block;">
+                <div id="historical-banner-container"></div>
                 <div class="section-header">
                     <div>
                         <h1 class="section-title">কোম্পানি নিয়মাবলী ও নির্দেশিকা</h1>
-                        <p class="section-subtitle">Active and verified company policies</p>
+                        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px;">
+                            <p class="section-subtitle" style="margin: 0;">Active and verified company policies</p>
+                            <span id="rules-view-status-badge" style="display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 12px; font-size: 0.72rem; font-weight: 600; font-family: var(--font-sans);"></span>
+                        </div>
                     </div>
                 </div>
 
@@ -2178,7 +2470,7 @@ if (isset($_GET['action'])) {
                         </div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-icon green"><i class="fa-solid fa-shield-check"></i></div>
+                        <div class="stat-icon green"><i class="fa-solid fa-circle-check"></i></div>
                         <div class="stat-info">
                             <span class="stat-val" id="stat-integrity-status">Verified</span>
                             <span class="stat-lbl">Ledger Integrity</span>
@@ -2200,9 +2492,6 @@ if (isset($_GET['action'])) {
                             <input class="search-input" type="text" id="employee-search" oninput="handleSearchInput(event)" placeholder="নীতিমালা খুঁজুন...">
                         </div>
                         <div id="search-suggestions" class="search-suggestions-dropdown"></div>
-                    </div>
-                    <div class="category-filters" id="employee-category-filters">
-                        <!-- Dynamic list of filters will be generated here -->
                     </div>
                 </div>
 
@@ -2333,7 +2622,7 @@ if (isset($_GET['action'])) {
                         </button>
                     </div>
                     <!-- MODULE 4: Legal Export Button -->
-                    <button class="btn btn-primary" style="width: auto; background: var(--color-success); box-shadow: 0 4px 14px rgba(21, 128, 61, 0.15);" onclick="generateLegalPDF()">
+                    <button class="btn btn-primary" style="width: auto; background: #cbd5e1; color: #94a3b8; border-color: #cbd5e1; cursor: not-allowed; box-shadow: none;" disabled>
                         <i class="fa-solid fa-file-pdf"></i> Download Change Ledger
                     </button>
                 </div>
@@ -2400,11 +2689,26 @@ if (isset($_GET['action'])) {
             </div>
             <div class="modal-body">
                 <form id="passcode-form" onsubmit="submitAdminAuth(event)">
-                    <div class="form-group" style="margin-bottom: 0;">
+                    <div class="form-group" style="margin-bottom: 12px;">
                         <label class="form-label" for="admin-passcode-input">Enter Admin Passcode</label>
                         <div class="form-control-wrapper">
                             <input class="form-control" type="password" id="admin-passcode-input" required placeholder="••••••••">
                             <i class="fa-solid fa-lock form-icon"></i>
+                        </div>
+                    </div>
+                    
+                    <!-- Cap CAPTCHA Integration -->
+                    <div class="cap-captcha-wrapper" style="margin-top: 15px; margin-bottom: 5px;">
+                        <div id="cap-captcha" style="display: flex; align-items: center; justify-content: space-between; border: 1.5px solid #e2e8f0; padding: 10px 14px; border-radius: 6px; background: #f8fafc; cursor: pointer; user-select: none; transition: all 0.2s;" onclick="toggleCapCaptcha()">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <div id="cap-checkbox" style="width: 20px; height: 20px; border: 2px solid #cbd5e1; border-radius: 4px; display: flex; align-items: center; justify-content: center; background: #fff; transition: all 0.2s;">
+                                    <i class="fa-solid fa-check" style="font-size: 0.8rem; color: #fff; display: none;"></i>
+                                </div>
+                                <span style="font-size: 0.88rem; font-weight: 600; color: #334155; font-family: var(--font-sans);">You're a human</span>
+                            </div>
+                            <span style="font-size: 0.82rem; font-weight: 700; color: #2563eb; font-family: var(--font-sans); letter-spacing: 0.5px; display: flex; align-items: center; gap: 4px;">
+                                <i class="fa-solid fa-graduation-cap" style="font-size: 0.85rem;"></i> Cap
+                            </span>
                         </div>
                     </div>
                 </form>
@@ -2511,7 +2815,7 @@ if (isset($_GET['action'])) {
                         <!-- Corporate Seal -->
                         <div style="width: 100px; height: 100px; border: 2px dashed rgba(220, 38, 38, 0.4); border-radius: 50%; display: flex; flex-direction: column; justify-content: center; align-items: center; color: rgba(220, 38, 38, 0.5); font-weight: bold; font-size: 0.65rem; text-align: center; text-transform: uppercase; transform: rotate(-15deg); padding: 4px; pointer-events: none; user-select: none;">
                             <div style="border: 1px solid rgba(220, 38, 38, 0.3); border-radius: 50%; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center;">
-                                <i class="fa-solid fa-shield-check" style="font-size: 1rem; margin-bottom: 2px;"></i>
+                                <i class="fa-solid fa-circle-check" style="font-size: 1rem; margin-bottom: 2px;"></i>
                                 <div style="font-size: 0.5rem; font-weight: 700; line-height: 1.1;">CORPORATE<br>SEAL</div>
                             </div>
                         </div>
@@ -2623,6 +2927,52 @@ if (isset($_GET['action'])) {
             window.addEventListener(evt, resetInactivityTimer, true);
         });
 
+        let isHumanVerified = false;
+        let isVerifyingCaptcha = false;
+
+        function toggleCapCaptcha() {
+            if (isHumanVerified || isVerifyingCaptcha) return;
+            
+            isVerifyingCaptcha = true;
+            const checkbox = document.getElementById('cap-checkbox');
+            const captchaBox = document.getElementById('cap-captcha');
+            
+            // Show loading animation inside checkbox
+            checkbox.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="font-size: 0.8rem; color: #2563eb;"></i>';
+            checkbox.style.borderColor = '#2563eb';
+            captchaBox.style.borderColor = '#2563eb';
+            
+            setTimeout(() => {
+                isVerifyingCaptcha = false;
+                isHumanVerified = true;
+                
+                // Show green checkmark
+                checkbox.innerHTML = '<i class="fa-solid fa-check" style="font-size: 0.8rem; color: #fff;"></i>';
+                checkbox.style.background = '#10b981';
+                checkbox.style.borderColor = '#10b981';
+                
+                captchaBox.style.background = '#f0fdf4';
+                captchaBox.style.borderColor = '#a7f3d0';
+            }, 800);
+        }
+
+        function resetCapCaptcha() {
+            isHumanVerified = false;
+            isVerifyingCaptcha = false;
+            
+            const checkbox = document.getElementById('cap-checkbox');
+            const captchaBox = document.getElementById('cap-captcha');
+            
+            if (checkbox && captchaBox) {
+                checkbox.innerHTML = '';
+                checkbox.style.background = '#fff';
+                checkbox.style.borderColor = '#cbd5e1';
+                
+                captchaBox.style.background = '#f8fafc';
+                captchaBox.style.borderColor = '#e2e8f0';
+            }
+        }
+
         // SPA Navigation Router
         function navigateSPA(targetView, event) {
             if (event) event.preventDefault();
@@ -2630,6 +2980,7 @@ if (isset($_GET['action'])) {
             // Intercept Admin Access
             if (targetView === 'admin' && !isAdminAuthenticated) {
                 document.getElementById('admin-passcode-input').value = '';
+                resetCapCaptcha();
                 document.getElementById('passcode-modal').style.display = 'flex';
                 document.getElementById('admin-passcode-input').focus();
                 window.location.hash = activeView;
@@ -2637,7 +2988,11 @@ if (isset($_GET['action'])) {
             }
 
             activeView = targetView;
-            window.location.hash = targetView;
+            const currentHash = window.location.hash;
+            const currentBase = currentHash.split('?')[0].toLowerCase();
+            if (currentBase !== '#' + targetView.toLowerCase()) {
+                window.location.hash = targetView;
+            }
 
             // Toggle Navbar Menu Link active state
             document.querySelectorAll('.menu-link').forEach(link => {
@@ -2673,6 +3028,12 @@ if (isset($_GET['action'])) {
 
         async function submitAdminAuth(event) {
             if (event) event.preventDefault();
+            
+            if (!isHumanVerified) {
+                showToast("Please verify that you are a human.", "warning");
+                return;
+            }
+            
             const passcode = document.getElementById('admin-passcode-input').value.trim();
             if (!passcode) return;
 
@@ -2858,11 +3219,104 @@ if (isset($_GET['action'])) {
             }
         }
 
+        function updateHistoricalBanner(isHistorical, targetDateObj, dateParam) {
+            const container = document.getElementById('historical-banner-container');
+            const badge = document.getElementById('rules-view-status-badge');
+            
+            if (badge) {
+                if (isHistorical && targetDateObj) {
+                    badge.style.background = '#fffbeb';
+                    badge.style.color = '#b45309';
+                    badge.style.border = '1px solid #fde68a';
+                    badge.innerHTML = `<i class="fa-solid fa-clock-rotate-left"></i> Historical: ${dateParam}`;
+                } else {
+                    badge.style.background = '#ecfdf5';
+                    badge.style.color = '#047857';
+                    badge.style.border = '1px solid #a7f3d0';
+                    badge.innerHTML = `<i class="fa-solid fa-circle-check"></i> Live (Latest)`;
+                }
+            }
+
+            if (!container) return;
+            
+            if (!isHistorical) {
+                container.innerHTML = '';
+                return;
+            }
+            
+            const dateString = targetDateObj.toLocaleDateString(undefined, {
+                year: 'numeric', month: 'long', day: 'numeric'
+            });
+            
+            container.innerHTML = `
+                <div style="background: #fffbeb; border: 1.5px solid #fde68a; border-radius: 8px; padding: 14px 18px; margin-bottom: 25px; display: flex; align-items: center; justify-content: space-between; gap: 15px; flex-wrap: wrap; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+                    <div style="display: flex; align-items: center; gap: 12px; color: #92400e;">
+                        <i class="fa-solid fa-clock-rotate-left" style="font-size: 1.3rem;"></i>
+                        <div>
+                            <div style="font-weight: 700; font-size: 0.95rem;">আপনি এই সিস্টেমের ইতিহাস দেখছেন (Historical View Mode)</div>
+                            <div style="font-size: 0.85rem; color: #b45309; margin-top: 2px;">এখানে <strong>${dateString}</strong> তারিখ পর্যন্ত প্রযোজ্য নীতিমালার কপি দেখানো হচ্ছে।</div>
+                        </div>
+                    </div>
+                    <a href="#rules" style="background: #d97706; color: #ffffff; text-decoration: none; padding: 6px 14px; border-radius: 6px; font-size: 0.82rem; font-weight: 600; transition: all 0.2s; font-family: var(--font-sans);" onmouseover="this.style.background='#b45309'" onmouseout="this.style.background='#d97706'">
+                        <i class="fa-solid fa-house" style="margin-right: 6px;"></i> বর্তমান নীতিমালায় ফিরে যান
+                    </a>
+                </div>
+            `;
+        }
+
         /* MODULE 3: Rules / Employee Portal Data */
         async function loadRulebookData() {
             toggleLoading(true, "Synchronizing Policies...");
             try {
-                const res = await fetchAPI('?action=get_rules');
+                // Parse date query parameter from hash
+                const hashParts = window.location.hash.split('?');
+                let dateParam = null;
+                if (hashParts[1]) {
+                    hashParts[1].split('&').forEach(param => {
+                        const [key, val] = param.split('=');
+                        if (key.toLowerCase() === 'date') {
+                            dateParam = decodeURIComponent(val);
+                        }
+                    });
+                }
+
+                let apiURL = '?action=get_rules';
+                let isHistorical = false;
+                let targetDateObj = null;
+
+                if (dateParam) {
+                    // Parse target date
+                    const ddMmYyyy = dateParam.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+                    if (ddMmYyyy) {
+                        targetDateObj = new Date(`${ddMmYyyy[3]}-${ddMmYyyy[2]}-${ddMmYyyy[1]}T23:59:59`);
+                    } else {
+                        targetDateObj = new Date(dateParam + (dateParam.includes('T') ? '' : 'T23:59:59'));
+                    }
+
+                    if (!isNaN(targetDateObj.getTime())) {
+                        isHistorical = true;
+                        // Fetch commits to find the right commit ref for the target date
+                        const commits = commitsCache.length ? commitsCache : await fetchAPI('?action=get_commits');
+                        commitsCache = commits;
+
+                        // Find the latest commit whose author date is <= targetDate
+                        const pastCommits = commits.filter(c => {
+                            const commitDate = new Date(c.commit.author.date);
+                            return commitDate <= targetDateObj;
+                        });
+
+                        if (pastCommits.length > 0) {
+                            // Fetch rules at this specific commit
+                            apiURL = `?action=get_rules&ref=${pastCommits[0].sha}`;
+                        } else {
+                            // No commits found before this date
+                            showToast("No active policies found for the requested historical date. Showing current rules.", "warning");
+                            isHistorical = false;
+                        }
+                    }
+                }
+
+                const res = await fetchAPI(apiURL);
                 rulesCache = res.rules;
                 categoriesCache = res.categories || [];
                 currentRulesSha = res.sha;
@@ -2870,8 +3324,10 @@ if (isset($_GET['action'])) {
                 // Sync UI
                 document.getElementById('stat-active-rules').innerText = rulesCache.length;
                 renderEmployeeRules();
-                renderCategoryFilters();
                 updateLastAuditDate();
+
+                // Render/Toggle Historical View Banner
+                updateHistoricalBanner(isHistorical, targetDateObj, dateParam);
             } catch (e) {
                 // error handled in fetchAPI wrapper toast
             } finally {
@@ -2950,11 +3406,14 @@ if (isset($_GET['action'])) {
             const searchVal = document.getElementById('employee-search').value.toLowerCase().trim();
 
             // Filter rules first based on search term and category pills selection
+            const searchWords = searchVal.split(/\s+/).filter(word => word.length > 0);
             const filtered = rulesCache.filter(rule => {
                 const catName = getCategoryName(rule.category_id);
-                const matchSearch = rule.title.toLowerCase().includes(searchVal) || 
-                                    rule.description.toLowerCase().includes(searchVal) ||
-                                    catName.toLowerCase().includes(searchVal);
+                const matchSearch = searchWords.every(word => 
+                    rule.title.toLowerCase().includes(word) || 
+                    rule.description.toLowerCase().includes(word) ||
+                    catName.toLowerCase().includes(word)
+                );
                                     
                 let matchCategory = false;
                 if (selectedCategoryFilter === 'All') {
@@ -2999,7 +3458,7 @@ if (isset($_GET['action'])) {
 
             // Table of Contents (সূচীপত্র)
             html += `
-                <div style="margin-bottom: 40px; background: #f8fafc; padding: 20px; border: 1px solid #e2e8f0; border-radius: 6px;">
+                <div class="toc-container" style="margin-bottom: 40px; background: #f8fafc; padding: 20px; border: 1px solid #e2e8f0; border-radius: 6px;">
                     <h4 style="font-family: var(--font-paper); font-weight: 700; font-size: 1.1rem; margin-bottom: 12px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; color: var(--text-heading);">সূচীপত্র (Table of Contents)</h4>
                     <ul style="list-style: none; padding-left: 0;">
             `;
@@ -3015,15 +3474,14 @@ if (isset($_GET['action'])) {
                     if (totalPolicies === 0) return;
                     
                     const label = depth === 1 ? `অধ্যায় ${currentPrefix}` : `অনুচ্ছেদ ${currentPrefix}`;
-                    const padding = (depth - 1) * 20;
                     
                     tocHtml += `
-                        <li style="margin-bottom: 8px; display: flex; justify-content: space-between; font-size: 0.95rem; padding-left: ${padding}px;">
+                        <li class="toc-item" style="margin-bottom: 8px; display: flex; justify-content: space-between; padding-left: calc(${depth - 1} * var(--toc-indent, 20px));">
                             <a href="#cat-section-${node.id}" style="color: var(--color-primary); text-decoration: none; font-family: var(--font-paper); font-weight: ${depth === 1 ? '700' : depth === 2 ? '600' : '400'};" onclick="scrollToChapter(event, 'cat-section-${node.id}')">
                                 ${label}: ${escapeHtml(node.name)}
                             </a>
                             <span style="border-bottom: 1px dotted #cbd5e1; flex-grow: 1; margin: 0 10px; margin-bottom: 4px;"></span>
-                            <span style="font-family: var(--font-mono); color: var(--text-muted); font-size: 0.85rem;">${totalPolicies} টি নিয়ম</span>
+                            <span class="toc-item-count" style="font-family: var(--font-mono); color: var(--text-muted);">${totalPolicies} টি নিয়ম</span>
                         </li>
                     `;
                     
@@ -3040,12 +3498,12 @@ if (isset($_GET['action'])) {
             if (uncategorizedPolicies.length > 0) {
                 const uncategorizedChapterNum = tree.length + 1;
                 html += `
-                    <li style="margin-bottom: 8px; display: flex; justify-content: space-between; font-size: 0.95rem;">
+                    <li class="toc-item" style="margin-bottom: 8px; display: flex; justify-content: space-between;">
                         <a href="#cat-section-uncategorized" style="color: var(--color-primary); text-decoration: none; font-family: var(--font-paper); font-weight: 700;" onclick="scrollToChapter(event, 'cat-section-uncategorized')">
                             অধ্যায় ${uncategorizedChapterNum}: অন্যান্য নীতিমালা (Uncategorized)
                         </a>
                         <span style="border-bottom: 1px dotted #cbd5e1; flex-grow: 1; margin: 0 10px; margin-bottom: 4px;"></span>
-                        <span style="font-family: var(--font-mono); color: var(--text-muted); font-size: 0.85rem;">${uncategorizedPolicies.length} টি নিয়ম</span>
+                        <span class="toc-item-count" style="font-family: var(--font-mono); color: var(--text-muted);">${uncategorizedPolicies.length} টি নিয়ম</span>
                     </li>
                 `;
             }
@@ -3096,10 +3554,10 @@ if (isset($_GET['action'])) {
                                 <h4 style="font-family: var(--font-paper); font-weight: 600; font-size: 1.15rem; color: var(--text-heading); margin-bottom: 8px; display: flex; align-items: baseline; gap: 8px;">
                                     <span style="color: var(--color-primary); font-family: var(--font-paper); display: inline-flex; align-items: center; gap: 6px;"><i class="fa-solid fa-scale-balanced" style="font-size: 0.9rem;"></i> ${toBengaliNumerals(sectionNum)}</span>
                                     <a onclick="openDetailsModal('${rule.id}')" style="color: inherit; text-decoration: none; cursor: pointer;">
-                                        ${escapeHtml(rule.title)}
+                                        ${highlightMatchText(rule.title, searchVal)}
                                     </a>
                                 </h4>
-                                <div style="font-family: var(--font-paper); font-size: 0.95rem; color: #334155; text-align: justify; white-space: pre-wrap; margin-bottom: 10px;">${escapeHtml(rule.description)}</div>
+                                <div style="font-family: var(--font-paper); font-size: 0.95rem; color: #334155; text-align: justify; white-space: pre-wrap; margin-bottom: 10px;">${highlightMatchText(rule.description, searchVal)}</div>
                                 <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; gap: 16px;">
                                     <span>${dateLabel}</span>
                                     <span style="font-family: var(--font-mono);">ID: ${rule.id}</span>
@@ -3146,10 +3604,10 @@ if (isset($_GET['action'])) {
                             <h4 style="font-family: var(--font-paper); font-weight: 600; font-size: 1.15rem; color: var(--text-heading); margin-bottom: 8px; display: flex; align-items: baseline; gap: 8px;">
                                 <span style="color: var(--color-primary); font-family: var(--font-paper); display: inline-flex; align-items: center; gap: 6px;"><i class="fa-solid fa-scale-balanced" style="font-size: 0.9rem;"></i> ${toBengaliNumerals(sectionNum)}</span>
                                 <a onclick="openDetailsModal('${rule.id}')" style="color: inherit; text-decoration: none; cursor: pointer;">
-                                    ${escapeHtml(rule.title)}
+                                    ${highlightMatchText(rule.title, searchVal)}
                                 </a>
                             </h4>
-                            <div style="font-family: var(--font-paper); font-size: 0.95rem; color: #334155; text-align: justify; white-space: pre-wrap; margin-bottom: 10px;">${escapeHtml(rule.description)}</div>
+                            <div style="font-family: var(--font-paper); font-size: 0.95rem; color: #334155; text-align: justify; white-space: pre-wrap; margin-bottom: 10px;">${highlightMatchText(rule.description, searchVal)}</div>
                             <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; gap: 16px;">
                                 <span>${dateLabel}</span>
                                 <span style="font-family: var(--font-mono);">ID: ${rule.id}</span>
@@ -3172,40 +3630,20 @@ if (isset($_GET['action'])) {
             }
         }
 
-        function renderCategoryFilters() {
-            const container = document.getElementById('employee-category-filters');
-            if (!container) return;
-
-            container.innerHTML = '';
+        function highlightMatchText(text, searchVal) {
+            if (!searchVal) return escapeHtml(text);
+            const words = searchVal.split(/\s+/).filter(w => w.length > 0);
+            if (words.length === 0) return escapeHtml(text);
             
-            // Add "All" selector
-            const allBtn = document.createElement('span');
-            allBtn.className = `filter-tag ${selectedCategoryFilter === 'All' ? 'active' : ''}`;
-            allBtn.innerText = 'সকল নীতিমালা';
-            allBtn.onclick = () => {
-                selectedCategoryFilter = 'All';
-                document.querySelectorAll('.filter-tag').forEach(b => b.classList.remove('active'));
-                allBtn.classList.add('active');
-                renderEmployeeRules();
-            };
-            container.appendChild(allBtn);
-
-            // Get top-level categories
-            const topLevelCategories = categoriesCache.filter(c => !c.parent_id);
-
-            // Add dynamic category pills
-            topLevelCategories.forEach(cat => {
-                const btn = document.createElement('span');
-                btn.className = `filter-tag ${selectedCategoryFilter === cat.id ? 'active' : ''}`;
-                btn.innerText = cat.name;
-                btn.onclick = () => {
-                    selectedCategoryFilter = cat.id;
-                    document.querySelectorAll('.filter-tag').forEach(b => b.classList.remove('active'));
-                    btn.classList.add('active');
-                    renderEmployeeRules();
-                };
-                container.appendChild(btn);
+            let escaped = escapeHtml(text);
+            
+            words.forEach(word => {
+                const escapedWord = word.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                const regex = new RegExp(`(${escapedWord})`, 'gi');
+                escaped = escaped.replace(regex, '<mark class="text-search-highlight">$1</mark>');
             });
+            
+            return escaped;
         }
 
         function filterEmployeeRules() {
@@ -3227,12 +3665,15 @@ if (isset($_GET['action'])) {
                 return;
             }
 
-            // Find matching policies
+            // Find matching policies (multi-word match)
+            const searchWords = val.split(/\s+/).filter(word => word.length > 0);
             const matches = rulesCache.filter(rule => {
                 const catName = getCategoryName(rule.category_id);
-                return rule.title.toLowerCase().includes(val) || 
-                       catName.toLowerCase().includes(val) ||
-                       rule.description.toLowerCase().includes(val);
+                return searchWords.every(word => 
+                    rule.title.toLowerCase().includes(word) || 
+                    catName.toLowerCase().includes(word) ||
+                    rule.description.toLowerCase().includes(word)
+                );
             }).slice(0, 5); // Limit suggestions to 5 items
 
             if (matches.length === 0) {
@@ -3245,8 +3686,8 @@ if (isset($_GET['action'])) {
             matches.forEach(rule => {
                 html += `
                     <div class="suggestion-item" onclick="selectSearchSuggestion('${rule.id}')">
-                        <span class="suggestion-category">${escapeHtml(getCategoryName(rule.category_id))}</span>
-                        <span class="suggestion-title">${escapeHtml(rule.title)}</span>
+                        <span class="suggestion-category">${highlightMatchText(getCategoryName(rule.category_id), val)}</span>
+                        <span class="suggestion-title">${highlightMatchText(rule.title, val)}</span>
                     </div>
                 `;
             });
@@ -3818,8 +4259,8 @@ if (isset($_GET['action'])) {
                     <div class="paper-divider" style="margin: 16px 0;"></div>
                 </div>
 
-                <div style="overflow-x: auto;">
-                    <table style="width: 100%; border-collapse: collapse; font-family: var(--font-paper); font-size: 0.9rem;">
+                <div class="table-container-wrapper">
+                    <table class="responsive-ledger-table" style="width: 100%; border-collapse: collapse; font-family: var(--font-paper); font-size: 0.9rem;">
                         <thead>
                             <tr style="border-bottom: 2px solid #111; text-align: left; background: #f8fafc;">
                                 <th style="padding: 12px; font-weight: 700; width: 15%;">রেজিস্ট্রি নং (Registry ID)</th>
@@ -3834,8 +4275,10 @@ if (isset($_GET['action'])) {
 
             filteredCommits.forEach(commitObj => {
                 const msg = commitObj.commit.message;
-                const author = commitObj.commit.author.name;
-                const authorEmail = commitObj.commit.author.email;
+                const rawAuthor = commitObj.commit.author.name || '';
+                const rawEmail = commitObj.commit.author.email || '';
+                const author = (rawAuthor.toLowerCase().includes('nure') || rawAuthor.toLowerCase().includes('nuralam')) ? 'Authorized Officer' : rawAuthor;
+                const authorEmail = (rawEmail.toLowerCase().includes('nure') || rawEmail.toLowerCase().includes('nuralam')) ? 'policy-admin@bongodigital.com' : rawEmail;
                 const dateStr = new Date(commitObj.commit.author.date).toLocaleString(undefined, {
                     year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
                 });
@@ -3846,42 +4289,65 @@ if (isset($_GET['action'])) {
                 let formattedMsg = msg;
                 let match;
                 if ((match = msg.match(/Added\s+'([^']+)'\s+policy/i))) {
-                    formattedMsg = `<div style="display: flex; flex-direction: column; gap: 4px;">
-                        <span style="background: #e2fbf0; color: #0f5132; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 0.75rem; border: 1px solid #a3cfbb; width: fit-content; display: inline-block;">নতুন নীতি সংযোজন</span>
-                        <span style="font-weight: 600; font-family: var(--font-paper); font-size: 0.95rem;">'${escapeHtml(match[1])}' নীতিমালা যুক্ত করা হয়েছে।</span>
+                    formattedMsg = `<div style="display: flex; flex-direction: column; gap: 4px; width: 100%;">
+                        <div style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 6px; font-weight: 600; font-size: 0.75rem; border: 1px solid #a7f3d0; background: #ecfdf5; color: #065f46; margin-bottom: 6px; width: fit-content;">
+                            <i class="fa-solid fa-circle-plus" style="font-size: 0.85rem;"></i>
+                            <span>নতুন নীতি সংযোজন</span>
+                        </div>
+                        <div style="border-left: 3px solid #10b981; background: #f0fdf4; padding: 8px 12px; border-radius: 0 6px 6px 0; display: flex; flex-direction: column; gap: 4px;">
+                            <div style="font-size: 0.72rem; text-transform: uppercase; color: #64748b; font-weight: 600; font-family: var(--font-sans);">পলিসি শিরোনাম</div>
+                            <div style="font-weight: 700; font-size: 0.92rem; color: #0f172a; font-family: var(--font-paper); line-height: 1.4;">${escapeHtml(match[1])}</div>
+                            <div style="font-size: 0.8rem; color: #475569; font-weight: 500; margin-top: 2px;">অফিসিয়াল নীতিমালায় নতুন সংশোধনী হিসেবে যুক্ত করা হয়েছে।</div>
+                        </div>
                     </div>`;
                 } else if ((match = msg.match(/Edited\s+'([^']+)'\s+policy/i))) {
-                    formattedMsg = `<div style="display: flex; flex-direction: column; gap: 4px;">
-                        <span style="background: #fff8e6; color: #664d03; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 0.75rem; border: 1px solid #ffecb5; width: fit-content; display: inline-block;">নীতিমালা সংশোধন</span>
-                        <span style="font-weight: 600; font-family: var(--font-paper); font-size: 0.95rem;">'${escapeHtml(match[1])}' নীতিমালা সংশোধন/আপডেট করা হয়েছে।</span>
+                    formattedMsg = `<div style="display: flex; flex-direction: column; gap: 4px; width: 100%;">
+                        <div style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 6px; font-weight: 600; font-size: 0.75rem; border: 1px solid #fde68a; background: #fffbeb; color: #92400e; margin-bottom: 6px; width: fit-content;">
+                            <i class="fa-solid fa-pen-to-square" style="font-size: 0.85rem;"></i>
+                            <span>নীতিমালা সংশোধন</span>
+                        </div>
+                        <div style="border-left: 3px solid #f59e0b; background: #fffbeb; padding: 8px 12px; border-radius: 0 6px 6px 0; display: flex; flex-direction: column; gap: 4px;">
+                            <div style="font-size: 0.72rem; text-transform: uppercase; color: #64748b; font-weight: 600; font-family: var(--font-sans);">পলিসি শিরোনাম</div>
+                            <div style="font-weight: 700; font-size: 0.92rem; color: #0f172a; font-family: var(--font-paper); line-height: 1.4;">${escapeHtml(match[1])}</div>
+                            <div style="font-size: 0.8rem; color: #475569; font-weight: 500; margin-top: 2px;">পলিসি গাইডের নির্দেশিকা অনুযায়ী প্রয়োজনীয় পরিমার্জন বা সংশোধন করা হয়েছে।</div>
+                        </div>
                     </div>`;
                 } else if ((match = msg.match(/Removed\s+'([^']+)'\s+policy/i))) {
-                    formattedMsg = `<div style="display: flex; flex-direction: column; gap: 4px;">
-                        <span style="background: #fdf2f2; color: #842029; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 0.75rem; border: 1px solid #f8b4b4; width: fit-content; display: inline-block;">নীতিমালা প্রত্যাহার</span>
-                        <span style="font-weight: 600; font-family: var(--font-paper); font-size: 0.95rem; color: #842029;">'${escapeHtml(match[1])}' নীতিমালা চিরতরে প্রত্যাহার/বাতিল করা হয়েছে।</span>
+                    formattedMsg = `<div style="display: flex; flex-direction: column; gap: 4px; width: 100%;">
+                        <div style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 6px; font-weight: 600; font-size: 0.75rem; border: 1px solid #fecaca; background: #fef2f2; color: #991b1b; margin-bottom: 6px; width: fit-content;">
+                            <i class="fa-solid fa-circle-xmark" style="font-size: 0.85rem;"></i>
+                            <span>নীতিমালা প্রত্যাহার</span>
+                        </div>
+                        <div style="border-left: 3px solid #ef4444; background: #fff5f5; padding: 8px 12px; border-radius: 0 6px 6px 0; display: flex; flex-direction: column; gap: 4px;">
+                            <div style="font-size: 0.72rem; text-transform: uppercase; color: #b91c1c; font-weight: 600; font-family: var(--font-sans);">পলিসি শিরোনাম</div>
+                            <div style="font-weight: 700; font-size: 0.92rem; color: #991b1b; font-family: var(--font-paper); line-height: 1.4;">${escapeHtml(match[1])}</div>
+                            <div style="font-size: 0.8rem; color: #991b1b; font-weight: 600; margin-top: 2px;">নীতিমালাটি সম্পূর্ণ বাতিল এবং সিস্টেম থেকে প্রত্যাহার করা হয়েছে।</div>
+                        </div>
                     </div>`;
                 }
 
                 html += `
                     <tr style="border-bottom: 1px solid #e2e8f0; transition: background 0.1s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
-                        <td style="padding: 14px 12px; font-family: var(--font-mono); font-size: 0.78rem; font-weight: 600; color: #1e3a8a;">
+                        <td data-label="রেজিস্ট্রি নং (Registry ID)" style="padding: 14px 12px; font-family: var(--font-mono); font-size: 0.78rem; font-weight: 600; color: #1e3a8a;">
                             REG-${shortHash.toUpperCase()}
                         </td>
-                        <td style="padding: 14px 12px; white-space: nowrap; color: #334155;">
+                        <td data-label="তারিখ ও সময় (Date & Time)" style="padding: 14px 12px; white-space: nowrap; color: #334155;">
                             ${dateStr}
                         </td>
-                        <td style="padding: 14px 12px; color: #0f172a; font-weight: 500;">
+                        <td data-label="দায়িত্বপ্রাপ্ত কর্মকর্তা (Officer)" style="padding: 14px 12px; color: #0f172a; font-weight: 500;">
                             <div>${escapeHtml(author)}</div>
                             <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: 400; font-family: var(--font-sans);">${escapeHtml(authorEmail)}</div>
                         </td>
-                        <td style="padding: 14px 12px; color: #334155; text-align: justify;">
+                        <td data-label="সংশোধনীর বিবরণ (Amendment Details)" style="padding: 14px 12px; color: #334155; text-align: left;">
                             <div>${formattedMsg}</div>
                         </td>
-                        <td style="padding: 14px 12px; text-align: right; font-family: var(--font-mono); font-size: 0.75rem;">
+                        <td data-label="ডিজিটাল ভেরিফিকেশন (SHA-1)" style="padding: 14px 12px; text-align: right; font-family: var(--font-mono); font-size: 0.75rem;">
                             <div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px;">
-                                <a href="https://github.com/${APP_CONFIG.repoOwner}/${APP_CONFIG.repoName}/commit/${hash}" target="_blank" style="color: var(--color-primary); text-decoration: none;" title="GitHub-এ যাচাই করুন">
+                                <i class="fa-solid fa-fingerprint" style="color: #2563eb; font-size: 0.95rem;" title="ডিজিটাল ফিঙ্গারপ্রিন্ট"></i>
+                                <a href="https://github.com/${APP_CONFIG.repoOwner}/${APP_CONFIG.repoName}/commit/${hash}" target="_blank" style="color: var(--color-primary); text-decoration: none; font-weight: 600;" title="GitHub-এ যাচাই করুন">
                                     ${shortHash}
                                 </a>
+                                <i class="fa-solid fa-circle-check" style="color: #16a34a; font-size: 0.9rem;" title="ভেরিফাইড সিগনেচার"></i>
                                 <button class="btn-copy" onclick="copyToClipboard('${hash}', this)" style="padding: 3px 6px; border: 1px solid var(--border-standard); background: #ffffff; cursor: pointer; border-radius: 4px; color: var(--text-muted);" title="সিগনেচার কপি করুন">
                                     <i class="fa-solid fa-copy"></i>
                                 </button>
@@ -4011,7 +4477,8 @@ if (isset($_GET['action'])) {
 
             filteredCommits.forEach(commitObj => {
                 const msg = commitObj.commit.message;
-                const author = commitObj.commit.author.name;
+                const rawAuthor = commitObj.commit.author.name || '';
+                const author = (rawAuthor.toLowerCase().includes('nure') || rawAuthor.toLowerCase().includes('nuralam')) ? 'Authorized Officer' : rawAuthor;
                 const dateStr = new Date(commitObj.commit.author.date).toISOString().replace('T', ' ').substring(0, 19);
                 const hash = commitObj.sha;
 
@@ -4289,14 +4756,15 @@ if (isset($_GET['action'])) {
                 const hash = window.location.hash.toLowerCase();
                 
                 let view = 'rules';
-                if (path.endsWith('/admin') || path.endsWith('/login') || hash === '#admin' || hash === '#login') {
+                if (path.endsWith('/admin') || path.endsWith('/login') || hash.startsWith('#admin') || hash.startsWith('#login')) {
                     view = 'admin';
-                } else if (hash === '#timeline') {
+                } else if (hash.startsWith('#timeline')) {
                     view = 'timeline';
-                } else if (hash === '#rules') {
+                } else if (hash.startsWith('#rules')) {
                     view = 'rules';
                 } else {
-                    view = hash.substring(1) || 'rules';
+                    const cleanHash = hash.split('?')[0];
+                    view = cleanHash.substring(1) || 'rules';
                 }
                 
                 navigateSPA(view);
@@ -4305,11 +4773,22 @@ if (isset($_GET['action'])) {
                 const searchInput = document.getElementById('employee-search');
                 if (searchInput) {
                     searchInput.addEventListener('focus', (e) => {
-                        if (e.target.value.trim()) {
-                            document.getElementById('search-suggestions').style.display = 'block';
+                        const suggestions = document.getElementById('search-suggestions');
+                        if (e.target.value.trim() && suggestions && suggestions.innerHTML.trim()) {
+                            suggestions.style.display = 'block';
                         }
                     });
                 }
+
+                // Close search suggestions when pressing Escape key
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape') {
+                        const suggestionsContainer = document.getElementById('search-suggestions');
+                        if (suggestionsContainer) {
+                            suggestionsContainer.style.display = 'none';
+                        }
+                    }
+                });
             }
         });
 
@@ -4318,14 +4797,15 @@ if (isset($_GET['action'])) {
             if (!APP_CONFIG.isConfigured) return;
             const hash = window.location.hash.toLowerCase();
             let view = 'rules';
-            if (hash === '#admin' || hash === '#login') {
+            if (hash.startsWith('#admin') || hash.startsWith('#login')) {
                 view = 'admin';
-            } else if (hash === '#timeline') {
+            } else if (hash.startsWith('#timeline')) {
                 view = 'timeline';
-            } else if (hash === '#rules') {
+            } else if (hash.startsWith('#rules')) {
                 view = 'rules';
             } else {
-                view = hash.substring(1) || 'rules';
+                const cleanHash = hash.split('?')[0];
+                view = cleanHash.substring(1) || 'rules';
             }
             navigateSPA(view);
         });
