@@ -6,5 +6,14 @@
             "parent_id": null
         }
     ],
-    "policies": []
+    "policies": [
+        {
+            "id": "rule_6a36d6232dc0f",
+            "title": "অফিসের চলমান সময়",
+            "description": "সকাল ১০:০০ টা থেকে রাত ১২:০০ টা পর্যন্ত",
+            "category_id": "cat_6a36cddf2710a",
+            "created_at": "2026-06-20T18:04:19+00:00",
+            "updated_at": "2026-06-20T18:04:19+00:00"
+        }
+    ]
 }
