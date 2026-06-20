@@ -8,8 +8,34 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+header('X-Content-Type-Options: nosniff');
+header('X-Frame-Options: SAMEORIGIN');
+header('X-XSS-Protection: 1; mode=block');
+header('Referrer-Policy: strict-origin-when-cross-origin');
+
 define('CONFIG_FILE_PHP', __DIR__ . '/config.php');
 define('CONFIG_FILE_JSON', __DIR__ . '/config.json');
+
+function get_client_ip() {
+    foreach (['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR'] as $key) {
+        if (!empty($_SERVER[$key])) {
+            $ip = trim(explode(',', $_SERVER[$key])[0]);
+            if (filter_var($ip, FILTER_VALIDATE_IP)) return $ip;
+        }
+    }
+    return '0.0.0.0';
+}
+
+function get_ip_lockout($ip) {
+    $file = sys_get_temp_dir() . '/opms_' . md5('bongoltd_' . $ip) . '.json';
+    if (!file_exists($file)) return ['attempts' => 0, 'lockout_until' => 0];
+    return json_decode(file_get_contents($file), true) ?: ['attempts' => 0, 'lockout_until' => 0];
+}
+
+function save_ip_lockout($ip, $data) {
+    $file = sys_get_temp_dir() . '/opms_' . md5('bongoltd_' . $ip) . '.json';
+    file_put_contents($file, json_encode($data), LOCK_EX);
+}
 
 // Helper function to send JSON API response
 function send_json($data, $status = 200) {
@@ -171,7 +197,7 @@ if (isset($_GET['action'])) {
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); // For compatibility across varying local server environments
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
             "Authorization: Bearer {$token}",
             "User-Agent: Immutable-HR-App",
@@ -195,7 +221,7 @@ if (isset($_GET['action'])) {
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $url_rules);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
             "Authorization: Bearer {$token}",
             "User-Agent: Immutable-HR-App",
@@ -216,7 +242,7 @@ if (isset($_GET['action'])) {
             curl_setopt($ch, CURLOPT_URL, "https://api.github.com/repos/{$owner}/{$repo}/contents/rules.json");
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
             curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($init_body));
             curl_setopt($ch, CURLOPT_HTTPHEADER, [
                 "Authorization: Bearer {$token}",
@@ -286,7 +312,16 @@ if (isset($_GET['action'])) {
 
     // Verify Admin Passcode API
     if ($action === 'verify_admin') {
-        // Lockout Check
+        $client_ip = get_client_ip();
+        $ip_lockout = get_ip_lockout($client_ip);
+
+        // IP-based lockout check (cannot be bypassed by clearing cookies)
+        if ($ip_lockout['lockout_until'] > time()) {
+            $seconds_left = $ip_lockout['lockout_until'] - time();
+            send_json(['error' => "Too many failed login attempts. Try again in {$seconds_left} seconds."], 429);
+        }
+
+        // Session-based lockout check (secondary layer)
         if (isset($_SESSION['lockout_until']) && time() < $_SESSION['lockout_until']) {
             $seconds_left = $_SESSION['lockout_until'] - time();
             send_json(['error' => "Too many failed login attempts. Locked out. Please try again in {$seconds_left} seconds."], 429);
@@ -298,18 +333,19 @@ if (isset($_GET['action'])) {
         $data = json_decode(file_get_contents('php://input'), true);
         $passcode = $data['passcode'] ?? '';
         $correct_passcode = $config['admin_passcode'] ?? 'admin';
-        
+
         $is_match = false;
         if (strpos($correct_passcode, '$2y$') === 0) {
             $is_match = password_verify($passcode, $correct_passcode);
         } else {
             $is_match = ($passcode === $correct_passcode);
         }
-        
+
         if ($is_match) {
-            // Reset attempts on success
+            // Reset all lockouts on success
             $_SESSION['login_attempts'] = 0;
             unset($_SESSION['lockout_until']);
+            save_ip_lockout($client_ip, ['attempts' => 0, 'lockout_until' => 0]);
 
             $needs_migration = file_exists(CONFIG_FILE_JSON);
             $needs_hashing = (strpos($correct_passcode, '$2y$') !== 0);
@@ -331,14 +367,23 @@ if (isset($_GET['action'])) {
             $token = generate_auth_token($config);
             send_json(['success' => true, 'token' => $token]);
         } else {
+            // Update session-based counter
             $_SESSION['login_attempts'] = ($_SESSION['login_attempts'] ?? 0) + 1;
             if ($_SESSION['login_attempts'] >= 5) {
-                $_SESSION['lockout_until'] = time() + 300; // 5 minutes lockout
+                $_SESSION['lockout_until'] = time() + 300;
                 $_SESSION['login_attempts'] = 0;
-                send_json(['error' => 'Too many failed login attempts. Locked out for 5 minutes.'], 429);
             }
+
+            // Update IP-based counter (harder to bypass)
+            $ip_lockout['attempts']++;
+            if ($ip_lockout['attempts'] >= 10) {
+                $ip_lockout['lockout_until'] = time() + 900; // 15 min IP lockout
+                $ip_lockout['attempts'] = 0;
+            }
+            save_ip_lockout($client_ip, $ip_lockout);
+
             usleep(1500000); // 1.5 seconds delay to mitigate brute force
-            $remaining = 5 - $_SESSION['login_attempts'];
+            $remaining = max(0, 10 - $ip_lockout['attempts']);
             send_json(['error' => "Invalid admin passcode. {$remaining} attempts remaining before lockout."], 401);
         }
     }
@@ -356,7 +401,7 @@ if (isset($_GET['action'])) {
         curl_setopt($ch, CURLOPT_URL, $url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
         
         $headers = [
             "Authorization: Bearer {$token}",
