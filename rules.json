@@ -14,6 +14,11 @@
             "id": "cat_6a37b395ddf09",
             "name": "বোনাস ও ইনক্রিমেন্ট পলিসি (Bonus & Increment Policy)",
             "parent_id": null
+        },
+        {
+            "id": "cat_6a37b4c4ef5aa",
+            "name": "পারফরম্যান্স ও পয়েন্ট-বেসড সিস্টেম (Performance & Point-Based System)",
+            "parent_id": null
         }
     ],
     "policies": [
