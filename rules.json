@@ -167,6 +167,14 @@
             "category_id": "cat_6a37bdea98ec6",
             "created_at": "2026-06-21T10:36:32+00:00",
             "updated_at": "2026-06-21T10:36:32+00:00"
+        },
+        {
+            "id": "rule_6a37c2b3d0204",
+            "title": "শিষ্টাচার ও পরিবেশ সুরক্ষা (Office Etiquette & Environmental Standards)",
+            "description": "অফিস প্রাঙ্গণে ধূমপান বা পরিবেশের ক্ষতি হয় এমন কর্মকাণ্ড নিষিদ্ধ।",
+            "category_id": "cat_6a37c1fa6788f",
+            "created_at": "2026-06-21T10:53:39+00:00",
+            "updated_at": "2026-06-21T10:53:39+00:00"
         }
     ]
 }
