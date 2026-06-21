@@ -59,6 +59,11 @@
             "id": "cat_6a37de2523287",
             "name": "পদত্যাগ ও নোটিশ পিরিয়ড (Resignation & Notice Period)",
             "parent_id": null
+        },
+        {
+            "id": "cat_6a3802db0d31f",
+            "name": "ডিভাইস ও অ্যাক্সেসরিজ ব্যবস্থাপনা (Office Assets & Equipment Maintenance)",
+            "parent_id": null
         }
     ],
     "policies": [
