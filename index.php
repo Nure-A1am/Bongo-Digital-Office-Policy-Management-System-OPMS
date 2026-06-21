@@ -4357,7 +4357,7 @@ if (isset($_GET['action'])) {
 
         /* MODULE 3: Timeline & Audit Ledger */
         async function loadTimelineData() {
-            toggleLoading(true, "Accessing Git Revision Ledger...");
+            toggleLoading(true, "Accessing Verified Ledger...");
             try {
                 const commits = await fetchAPI('?action=get_commits');
                 commitsCache = commits;
