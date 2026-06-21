@@ -4,6 +4,11 @@
             "id": "cat_6a36cddf2710a",
             "name": "কর্মঘণ্টা, হাজিরা ও ছুটি (Work Hours, Attendance & Leave)",
             "parent_id": null
+        },
+        {
+            "id": "cat_6a37a17eddd9d",
+            "name": "প্রযুক্তি ব্যবহার ও মনিটরিং (IT Usage & Monitoring Policy)",
+            "parent_id": null
         }
     ],
     "policies": [
