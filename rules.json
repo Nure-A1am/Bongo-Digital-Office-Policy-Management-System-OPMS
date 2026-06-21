@@ -44,6 +44,11 @@
             "id": "cat_6a37c439b3161",
             "name": "তথ্য সুরক্ষা ও হ্যান্ডওভার (Information Security)",
             "parent_id": null
+        },
+        {
+            "id": "cat_6a37cf5e754bd",
+            "name": "আচরণবিধি ও শৃঙ্খলাজনিত নীতিমালা (Disciplinary Policy)",
+            "parent_id": null
         }
     ],
     "policies": [
