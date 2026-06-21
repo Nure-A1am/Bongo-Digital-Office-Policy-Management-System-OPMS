@@ -269,6 +269,14 @@
             "category_id": "cat_6a37daf4cbeed",
             "created_at": "2026-06-21T12:47:04+00:00",
             "updated_at": "2026-06-21T12:47:04+00:00"
+        },
+        {
+            "id": "rule_6a37df2b82a7d",
+            "title": "নোটিশ পিরিয়ড (Notice Period)",
+            "description": "পদত্যাগ করার ক্ষেত্রে কমপক্ষে ২ (দুই) মাস আগে লিখিত পদত্যাগ পত্র (resignation letter) জমা দিতে হবে।",
+            "category_id": "cat_6a37de2523287",
+            "created_at": "2026-06-21T12:55:07+00:00",
+            "updated_at": "2026-06-21T12:55:07+00:00"
         }
     ]
 }
