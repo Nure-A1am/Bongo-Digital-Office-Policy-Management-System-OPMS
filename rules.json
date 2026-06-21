@@ -9,6 +9,11 @@
             "id": "cat_6a37a17eddd9d",
             "name": "প্রযুক্তি ব্যবহার ও মনিটরিং (IT Usage & Monitoring Policy)",
             "parent_id": null
+        },
+        {
+            "id": "cat_6a37b395ddf09",
+            "name": "বোনাস ও ইনক্রিমেন্ট পলিসি (Bonus & Increment Policy)",
+            "parent_id": null
         }
     ],
     "policies": [
