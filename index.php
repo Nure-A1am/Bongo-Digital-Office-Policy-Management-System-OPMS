@@ -3709,12 +3709,12 @@ if (isset($_GET['action'])) {
                         
                         bodyHtml += `
                             <div id="rule-card-${rule.id}" style="margin-bottom: 30px; padding-left: 14px; border-left: 3px solid #cbd5e1; transition: all 0.4s ease; scroll-margin-top: 60px;">
-                                <h4 style="font-family: var(--font-paper); font-weight: 600; font-size: 1.15rem; color: var(--text-heading); margin-bottom: 8px; display: flex; align-items: baseline; gap: 8px;">
+                                <h4 style="font-family: var(--font-paper); font-weight: 600; font-size: 1.35rem; color: var(--text-heading); margin-bottom: 10px; display: flex; align-items: baseline; gap: 8px;">
                                     <span style="color: var(--color-primary); font-family: var(--font-paper); display: inline-flex; align-items: center; gap: 6px;"><i class="fa-solid fa-scale-balanced" style="font-size: 0.9rem;"></i> ${toBengaliNumerals(sectionNum)}</span>
                                     <span>${highlightMatchText(rule.title, searchVal)}</span>
                                 </h4>
-                                <div style="font-family: var(--font-paper); font-size: 0.95rem; color: #334155; text-align: justify; white-space: pre-wrap; margin-bottom: 10px;">${highlightMatchText(rule.description, searchVal)}</div>
-                                <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; gap: 16px;">
+                                <div style="font-family: var(--font-paper); font-size: 1.1rem; color: #334155; text-align: justify; white-space: pre-wrap; margin-bottom: 10px; line-height: 1.85;">${highlightMatchText(rule.description, searchVal)}</div>
+                                <div style="font-size: 0.88rem; color: var(--text-muted); display: flex; gap: 16px;">
                                     <span>${dateLabel}</span>
                                     <span style="font-family: var(--font-mono);">ID: ${rule.id}</span>
                                 </div>
@@ -3757,7 +3757,7 @@ if (isset($_GET['action'])) {
                     
                     html += `
                         <div id="rule-card-${rule.id}" style="margin-bottom: 30px; padding-left: 14px; border-left: 3px solid #cbd5e1; transition: all 0.4s ease; scroll-margin-top: 60px;">
-                            <h4 style="font-family: var(--font-paper); font-weight: 600; font-size: 1.15rem; color: var(--text-heading); margin-bottom: 8px; display: flex; align-items: baseline; gap: 8px;">
+                            <h4 style="font-family: var(--font-paper); font-weight: 600; font-size: 1.35rem; color: var(--text-heading); margin-bottom: 10px; display: flex; align-items: baseline; gap: 8px;">
                                 <span style="color: var(--color-primary); font-family: var(--font-paper); display: inline-flex; align-items: center; gap: 6px;"><i class="fa-solid fa-scale-balanced" style="font-size: 0.9rem;"></i> ${toBengaliNumerals(sectionNum)}</span>
                                 <a onclick="openDetailsModal('${rule.id}')" style="color: inherit; text-decoration: none; cursor: pointer;">
                                     ${highlightMatchText(rule.title, searchVal)}
